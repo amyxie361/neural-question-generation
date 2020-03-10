@@ -1,26 +1,34 @@
 # train file
-train_src_file = "./squad/para-train.txt"
-train_trg_file = "./squad/tgt-train.txt"
+squad_path = "/data/yqxie/00_data/squad_v1.1"
+glove_path = "/data/yqxie/00_data/GloVe"
+train_src_file = squad_path + "/para-train.txt"
+train_trg_file = squad_path + "/tgt-train.txt"
 # dev file
-dev_src_file = "./squad/para-dev.txt"
-dev_trg_file = "./squad/tgt-dev.txt"
+dev_src_file = squad_path + "/para-dev.txt"
+dev_trg_file = squad_path + "/tgt-dev.txt"
 # test file
-test_src_file = "./squad/para-test.txt"
-test_trg_file = "./squad/tgt-test.txt"
+test_src_file = squad_path + "/para-test.txt"
+test_trg_file = squad_path + "/tgt-test.txt"
 # embedding and dictionary file
-embedding = "./data/embedding.pkl"
-word2idx_file = "./data/word2idx.pkl"
+embedding = glove_path + "/embedding.pkl"
+word2idx_file = glove_path + "/word2idx.pkl"
 
-model_path = "./save/seq2seq/train_422203728/20_2.68"
-train = False
+# tree file
+train_tree_file = "../data/squad_train"
+vocab_file = "../data/vocab.txt"
+dev_tree_file = "../data/squad_dev"
+
+model_path = "./save/tree/train_model/"
+train = True
+test = False
 device = "cuda:1"
 use_gpu = True
-debug = False
+debug = True
 vocab_size = 45000
 freeze_embedding = True
 
 num_epochs = 20
-max_len = 400
+max_seq_len = 400
 num_layers = 2
 hidden_size = 300
 embedding_size = 300

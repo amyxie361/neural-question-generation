@@ -163,7 +163,6 @@ class Vocab(object):
 
         # Special entries will not be pruned.
         self.special = []
-
         if data is not None:
             self.addSpecials(data)
         if filename is not None:
@@ -175,7 +174,8 @@ class Vocab(object):
     # Load entries from a file.
     def loadFile(self, filename):
         idx = 0
-        for line in open(filename, 'r', encoding='utf8', errors='ignore'):
+        file_ = open(filename, 'r')
+        for line in tqdm(file_):
             token = line.rstrip('\n')
             self.add(token)
             idx += 1
@@ -242,16 +242,18 @@ class Vocab(object):
         return labels
 
 class TreeData(data.Dataset):
-    def __init__(self, path, name, vocab):
+    def __init__(self, path, vocab):
         super(TreeData, self).__init__()
 
         self.vocab = vocab
 
-        self.sentences = self.read_sentences(os.path.join(path, name + '.toks'))
+        self.sentences = self.read_sentences(path + '.toks')
 
-        self.trees = self.read_trees(os.path.join(path, name + '.parents'))
+        self.trees = self.read_trees(path + '.cparents')
 
-        self.size = self.sentences.size(0)
+        assert(len(self.sentences) == len(self.trees))
+        self.size = len(self.sentences)
+        print("samples numbers:", self.size)
 
     def __len__(self):
         return self.size
@@ -262,6 +264,7 @@ class TreeData(data.Dataset):
         return tree, sent
 
     def read_sentences(self, filename):
+        print("read sentence in tree")
         with open(filename, 'r') as f:
             sentences = [self.read_sentence(line) for line in tqdm(f.readlines())]
         return sentences
@@ -271,6 +274,7 @@ class TreeData(data.Dataset):
         return torch.tensor(indices, dtype=torch.long, device='cpu')
 
     def read_trees(self, filename):
+        print("read tree")
         with open(filename, 'r') as f:
             trees = [self.read_tree(line) for line in tqdm(f.readlines())]
         return trees
@@ -310,14 +314,15 @@ class TreeData(data.Dataset):
         return labels
 
 class SQuadDatasetWithTag(data.Dataset):
-    def __init__(self, src_file, trg_file, tree_file, max_length, word2idx,vocab_file, debug=False):
+    def __init__(self, src_file, trg_file, tree_file, max_length, word2idx, vocab_file, debug=False):
         self.srcs = []
         self.tags = []
 
         lines = open(src_file, "r").readlines()
         sentence, tags = [], []
         self.entity2idx = {"O": 0, "B_ans": 1, "I_ans": 2}
-        for line in lines:
+        print("load original file")
+        for line in tqdm(lines):
             line = line.strip()
             if len(line) == 0:
                 sentence.insert(0, START_TOKEN)
@@ -337,11 +342,17 @@ class SQuadDatasetWithTag(data.Dataset):
 
         self.trgs = open(trg_file, "r").readlines()
 
+        print("load vocab")
+
         vocab = Vocab(filename=vocab_file,
                       data=[PAD_TOKEN, UNK_TOKEN,
                             START_TOKEN, END_TOKEN])
 
-        self.trees, self.sents = TreeData(tree_file, vocab)
+        print("load tree")
+
+        self.tree_data = TreeData(tree_file, vocab)
+        self.trees = self.tree_data.trees
+        self.sents = self.tree_data.sentences
 
         assert len(self.srcs) == len(self.trgs), \
             "the number of source sequence {}" " and target sequence {} must be the same" \
@@ -423,33 +434,38 @@ class SQuadDatasetWithTag(data.Dataset):
 
 
 def collate_fn_tag(data):
-    def merge(sequences):
-        lengths = [len(sequence) for sequence in sequences]
-        padded_seqs = torch.zeros(len(sequences), max(lengths)).long()
-        for i, seq in enumerate(sequences):
-            end = lengths[i]
-            padded_seqs[i, :end] = seq[:end]
-        return padded_seqs, lengths
+    def merge(sequences, with_length=True):
+        if with_length:
+            lengths = [len(sequence) for sequence in sequences]
+            padded_seqs = torch.zeros(len(sequences), max(lengths)).long()
+            for i, seq in enumerate(sequences):
+                end = lengths[i]
+                padded_seqs[i, :end] = seq[:end]
+            return padded_seqs, lengths
+        else:
+            return sequences, torch.zeros(len(sequences), 1).long()
 
     data.sort(key=lambda x: len(x[0]), reverse=True)
-    src_seqs, ext_src_seqs, trg_seqs, ext_trg_seqs, oov_lst, tag_seqs = zip(*data)
+    src_seqs, ext_src_seqs, trg_seqs, ext_trg_seqs, oov_lst, tag_seqs, trees, sents = zip(*data)
 
     src_seqs, src_len = merge(src_seqs)
     ext_src_seqs, _ = merge(ext_src_seqs)
     trg_seqs, trg_len = merge(trg_seqs)
     ext_trg_seqs, _ = merge(ext_trg_seqs)
     tag_seqs, _ = merge(tag_seqs)
+    trees, _ = merge(trees, with_length=False)
+    sents, _ = merge(sents)
 
     assert src_seqs.size(1) == tag_seqs.size(1), "length of tokens and tags should be equal"
+    assert len(trees) == src_seqs.size(1), "length of src and tree should be equal:{}, {}".format(tree_len, src_len)
+    return src_seqs, ext_src_seqs, src_len, trg_seqs, ext_trg_seqs, trg_len, tag_seqs, oov_lst, trees, sents
 
-    return src_seqs, ext_src_seqs, src_len, trg_seqs, ext_trg_seqs, trg_len, tag_seqs, oov_lst
 
-
-def get_loader(src_file, trg_file, tree_file, word2idx,
+def get_loader(src_file, trg_file, tree_file, word2idx, vocab_file,
                batch_size, use_tag=False, debug=False, shuffle=False):
     # if use_tag:
     dataset = SQuadDatasetWithTag(src_file, trg_file, tree_file, config.max_seq_len,
-                                  word2idx, debug)
+                                  word2idx, vocab_file, debug)
     dataloader = data.DataLoader(dataset=dataset,
                                  batch_size=batch_size,
                                  shuffle=shuffle,

@@ -7,7 +7,7 @@ def main():
     if config.train:
         trainer = Trainer()
         trainer.train()
-    else:
+    if config.test:
         beamsearcher = BeamSearcher(config.model_path, config.output_dir)
         beamsearcher.decode()
 

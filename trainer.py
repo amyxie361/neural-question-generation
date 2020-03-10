@@ -9,7 +9,7 @@ import torch.optim as optim
 
 import config
 from data_utils import get_loader, eta, user_friendly_time, progress_bar, time_since
-from model import Seq2seq
+from model import SeqTree2seq
 
 
 class Trainer(object):
@@ -28,6 +28,7 @@ class Trainer(object):
                                        config.train_trg_file,
                                        config.train_tree_file,
                                        word2idx,
+                                       config.vocab_file,
                                        use_tag=config.use_tag,
                                        batch_size=config.batch_size,
                                        debug=config.debug)
@@ -35,6 +36,7 @@ class Trainer(object):
                                      config.dev_trg_file,
                                      config.dev_tree_file,
                                      word2idx,
+                                     config.vocab_file,
                                      use_tag=config.use_tag,
                                      batch_size=128,
                                      debug=config.debug)
