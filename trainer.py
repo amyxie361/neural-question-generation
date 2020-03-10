@@ -128,6 +128,8 @@ class Trainer(object):
                 tag_seq = tag_seq.to(config.device)
             else:
                 tag_seq = None
+
+        tree = tree[0] # TODO: tree can't be batched
         enc_outputs, enc_states = self.model.utterance_encoder(src_seq, src_len, tag_seq)
         tree_enc_outputs = self.model.tree_encoder(tree, sent) #todo construct tree input
         encode_outputs = torch.cat(enc_outputs, tree_enc_outputs) # todo: check cat dim

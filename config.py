@@ -33,7 +33,7 @@ num_layers = 2
 hidden_size = 300
 embedding_size = 300
 lr = 0.1
-batch_size = 64
+batch_size = 1
 dropout = 0.3
 max_grad_norm = 5.0
 
