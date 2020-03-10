@@ -1,13 +1,16 @@
 import json
 import pickle
 import time
+import os
 from collections import defaultdict
 from copy import deepcopy
+
 import numpy as np
 import torch
 import torch.utils.data as data
 from tqdm import tqdm
 import nltk
+
 import config
 
 PAD_TOKEN = "<PAD>"
@@ -20,9 +23,8 @@ UNK_ID = 1
 START_ID = 2
 END_ID = 3
 
-
 class SQuadDataset(data.Dataset):
-    def __init__(self, src_file, trg_file, max_length, word2idx, debug=False):
+    def __init__(self, src_file, trg_file, tree_file, max_length, word2idx, debug=False): #todo, to form tree input
         self.src = open(src_file, "r").readlines()
         self.trg = open(trg_file, "r").readlines()
 
@@ -119,9 +121,196 @@ def collate_fn(data):
 
     return src_seqs, ext_src_seqs, src_len, trg_seqs, ext_trg_seqs, trg_len, oov_lst
 
+# tree object from stanfordnlp/treelstm
+class Tree(object):
+    def __init__(self):
+        self.parent = None
+        self.num_children = 0
+        self.children = list()
+
+    def add_child(self, child):
+        child.parent = self
+        self.num_children += 1
+        self.children.append(child)
+
+    def size(self):
+        if getattr(self, '_size'):
+            return self._size
+        count = 1
+        for i in range(self.num_children):
+            count += self.children[i].size()
+        self._size = count
+        return self._size
+
+    def depth(self):
+        if getattr(self, '_depth'):
+            return self._depth
+        count = 0
+        if self.num_children > 0:
+            for i in range(self.num_children):
+                child_depth = self.children[i].depth()
+                if child_depth > count:
+                    count = child_depth
+            count += 1
+        self._depth = count
+        return self._depth
+
+class Vocab(object):
+    def __init__(self, filename=None, data=None, lower=False):
+        self.idxToLabel = {}
+        self.labelToIdx = {}
+        self.lower = lower
+
+        # Special entries will not be pruned.
+        self.special = []
+
+        if data is not None:
+            self.addSpecials(data)
+        if filename is not None:
+            self.loadFile(filename)
+
+    def size(self):
+        return len(self.idxToLabel)
+
+    # Load entries from a file.
+    def loadFile(self, filename):
+        idx = 0
+        for line in open(filename, 'r', encoding='utf8', errors='ignore'):
+            token = line.rstrip('\n')
+            self.add(token)
+            idx += 1
+
+    def getIndex(self, key, default=None):
+        key = key.lower() if self.lower else key
+        try:
+            return self.labelToIdx[key]
+        except KeyError:
+            return default
+
+    def getLabel(self, idx, default=None):
+        try:
+            return self.idxToLabel[idx]
+        except KeyError:
+            return default
+
+    # Mark this `label` and `idx` as special
+    def addSpecial(self, label, idx=None):
+        idx = self.add(label)
+        self.special += [idx]
+
+    # Mark all labels in `labels` as specials
+    def addSpecials(self, labels):
+        for label in labels:
+            self.addSpecial(label)
+
+    # Add `label` in the dictionary. Use `idx` as its index if given.
+    def add(self, label):
+        label = label.lower() if self.lower else label
+        if label in self.labelToIdx:
+            idx = self.labelToIdx[label]
+        else:
+            idx = len(self.idxToLabel)
+            self.idxToLabel[idx] = label
+            self.labelToIdx[label] = idx
+        return idx
+
+    # Convert `labels` to indices. Use `unkWord` if not found.
+    # Optionally insert `bosWord` at the beginning and `eosWord` at the .
+    def convertToIdx(self, labels, unkWord, bosWord=None, eosWord=None):
+        vec = []
+
+        if bosWord is not None:
+            vec += [self.getIndex(bosWord)]
+
+        unk = self.getIndex(unkWord)
+        vec += [self.getIndex(label, default=unk) for label in labels]
+
+        if eosWord is not None:
+            vec += [self.getIndex(eosWord)]
+
+        return vec
+
+    # Convert `idx` to labels. If index `stop` is reached, convert it and return.
+    def convertToLabels(self, idx, stop):
+        labels = []
+
+        for i in idx:
+            labels += [self.getLabel(i)]
+            if i == stop:
+                break
+
+        return labels
+
+class TreeData(data.Dataset):
+    def __init__(self, path, name, vocab):
+        super(TreeData, self).__init__()
+
+        self.vocab = vocab
+
+        self.sentences = self.read_sentences(os.path.join(path, name + '.toks'))
+
+        self.trees = self.read_trees(os.path.join(path, name + '.parents'))
+
+        self.size = self.sentences.size(0)
+
+    def __len__(self):
+        return self.size
+
+    def __getitem__(self, index):
+        tree = deepcopy(self.trees[index])
+        sent = deepcopy(self.sentences[index])
+        return tree, sent
+
+    def read_sentences(self, filename):
+        with open(filename, 'r') as f:
+            sentences = [self.read_sentence(line) for line in tqdm(f.readlines())]
+        return sentences
+
+    def read_sentence(self, line):
+        indices = self.vocab.convertToIdx(line.split(), UNK_TOKEN)
+        return torch.tensor(indices, dtype=torch.long, device='cpu')
+
+    def read_trees(self, filename):
+        with open(filename, 'r') as f:
+            trees = [self.read_tree(line) for line in tqdm(f.readlines())]
+        return trees
+
+    def read_tree(self, line):
+        parents = list(map(int, line.split()))
+        trees = dict()
+        root = None
+        for i in range(1, len(parents) + 1):
+            if i - 1 not in trees.keys() and parents[i - 1] != -1:
+                idx = i
+                prev = None
+                while True:
+                    parent = parents[idx - 1]
+                    if parent == -1:
+                        break
+                    tree = Tree()
+                    if prev is not None:
+                        tree.add_child(prev)
+                    trees[idx - 1] = tree
+                    tree.idx = idx - 1
+                    if parent - 1 in trees.keys():
+                        trees[parent - 1].add_child(tree)
+                        break
+                    elif parent == 0:
+                        root = tree
+                        break
+                    else:
+                        prev = tree
+                        idx = parent
+        return root
+
+    def read_labels(self, filename):
+        with open(filename, 'r') as f:
+            labels = list(map(lambda x: float(x), f.readlines()))
+            labels = torch.tensor(labels, dtype=torch.float, device='cpu')
+        return labels
 
 class SQuadDatasetWithTag(data.Dataset):
-    def __init__(self, src_file, trg_file, max_length, word2idx, debug=False):
+    def __init__(self, src_file, trg_file, tree_file, max_length, word2idx,vocab_file, debug=False):
         self.srcs = []
         self.tags = []
 
@@ -148,6 +337,12 @@ class SQuadDatasetWithTag(data.Dataset):
 
         self.trgs = open(trg_file, "r").readlines()
 
+        vocab = Vocab(filename=vocab_file,
+                      data=[PAD_TOKEN, UNK_TOKEN,
+                            START_TOKEN, END_TOKEN])
+
+        self.trees, self.sents = TreeData(tree_file, vocab)
+
         assert len(self.srcs) == len(self.trgs), \
             "the number of source sequence {}" " and target sequence {} must be the same" \
                 .format(len(self.srcs), len(self.trgs))
@@ -160,17 +355,21 @@ class SQuadDatasetWithTag(data.Dataset):
             self.srcs = self.srcs[:100]
             self.trgs = self.trgs[:100]
             self.tags = self.tags[:100]
+            self.trees = self.trees[:100]
+            self.sents = self.sents[:100]
             self.num_seqs = 100
 
     def __getitem__(self, index):
         src_seq = self.srcs[index]
         trg_seq = self.trgs[index]
         tag_seq = self.tags[index]
+        tree = self.trees[index]
+        sent = self.sents[index]
 
         tag_seq = torch.Tensor(tag_seq[:self.max_length])
         src_seq, ext_src_seq, oov_lst = self.context2ids(src_seq, self.word2idx)
         trg_seq, ext_trg_seq = self.question2ids(trg_seq, self.word2idx, oov_lst)
-        return src_seq, ext_src_seq, trg_seq, ext_trg_seq, oov_lst, tag_seq
+        return src_seq, ext_src_seq, trg_seq, ext_trg_seq, oov_lst, tag_seq, tree, sent
 
     def __len__(self):
         return self.num_seqs
@@ -246,22 +445,22 @@ def collate_fn_tag(data):
     return src_seqs, ext_src_seqs, src_len, trg_seqs, ext_trg_seqs, trg_len, tag_seqs, oov_lst
 
 
-def get_loader(src_file, trg_file, word2idx,
+def get_loader(src_file, trg_file, tree_file, word2idx,
                batch_size, use_tag=False, debug=False, shuffle=False):
-    if use_tag:
-        dataset = SQuadDatasetWithTag(src_file, trg_file, config.max_seq_len,
-                                      word2idx, debug)
-        dataloader = data.DataLoader(dataset=dataset,
-                                     batch_size=batch_size,
-                                     shuffle=shuffle,
-                                     collate_fn=collate_fn_tag)
-    else:
-        dataset = SQuadDataset(src_file, trg_file, config.max_seq_len,
-                               word2idx, debug)
-        dataloader = data.DataLoader(dataset=dataset,
-                                     batch_size=batch_size,
-                                     shuffle=shuffle,
-                                     collate_fn=collate_fn)
+    # if use_tag:
+    dataset = SQuadDatasetWithTag(src_file, trg_file, tree_file, config.max_seq_len,
+                                  word2idx, debug)
+    dataloader = data.DataLoader(dataset=dataset,
+                                 batch_size=batch_size,
+                                 shuffle=shuffle,
+                                 collate_fn=collate_fn_tag)
+    # else:
+    #     dataset = SQuadDataset(src_file, trg_file, config.max_seq_len,
+    #                            word2idx, debug)
+    #     dataloader = data.DataLoader(dataset=dataset,
+    #                                  batch_size=batch_size,
+    #                                  shuffle=shuffle,
+    #                                  collate_fn=collate_fn)
 
     return dataloader
 

@@ -73,6 +73,49 @@ class Encoder(nn.Module):
 
         return outputs, concat_states
 
+class TreeEncoder(nn.Module):
+    def __init__(self, in_dim, mem_dim):
+        super(TreeEncoder, self).__init__()
+
+        self.in_dim = in_dim
+        self.mem_dim = mem_dim
+
+        self.ioux = nn.Linear(self.in_dim, 3 * self.mem_dim)
+        self.iouh = nn.Linear(self.mem_dim, 3 * self.mem_dim)
+        self.fx = nn.Linear(self.in_dim, self.mem_dim)
+        self.fh = nn.Linear(self.mem_dim, self.mem_dim)
+
+    def node_forward(self, inputs, child_c, child_h):
+        child_h_sum = torch.sum(child_h, dim=0, keepdim=True)
+
+        iou = self.ioux(inputs) + self.iouh(child_h_sum)
+        i, o, u = torch.split(iou, iou.size(1) // 3, dim=1)
+        i, o, u = F.sigmoid(i), F.sigmoid(o), F.tanh(u)
+
+        f = F.sigmoid(
+            self.fh(child_h) +
+            self.fx(inputs).repeat(len(child_h), 1)
+        )
+        fc = torch.mul(f, child_c)
+
+        c = torch.mul(i, u) + torch.sum(fc, dim=0, keepdim=True)
+        h = torch.mul(o, F.tanh(c))
+        return c, h
+
+    def forward(self, tree, inputs):
+        for idx in range(tree.num_children):
+            self.forward(tree.children[idx], inputs)
+
+        if tree.num_children == 0:
+            child_c = inputs[0].detach().new(1, self.mem_dim).fill_(0.).requires_grad_()
+            child_h = inputs[0].detach().new(1, self.mem_dim).fill_(0.).requires_grad_()
+        else:
+            child_c, child_h = zip(*map(lambda x: x.state, tree.children))
+            child_c, child_h = torch.cat(child_c, dim=0), torch.cat(child_h, dim=0)
+
+        tree.state = self.node_forward(inputs[tree.idx], child_c, child_h)
+        return tree.state
+
 
 class Decoder(nn.Module):
     def __init__(self, embeddings, vocab_size, embedding_size, hidden_size, num_layers, dropout):
@@ -85,7 +128,7 @@ class Decoder(nn.Module):
 
         if num_layers == 1:
             dropout = 0.0
-        self.encoder_trans = nn.Linear(hidden_size, hidden_size)
+        self.encoder_trans = nn.Linear(2 * hidden_size, hidden_size)
         self.reduce_layer = nn.Linear(embedding_size + hidden_size, embedding_size)
         self.lstm = nn.LSTM(embedding_size, hidden_size, batch_first=True,
                             num_layers=num_layers, bidirectional=False, dropout=dropout)
@@ -210,4 +253,49 @@ class Seq2seq(nn.Module):
 
     def train_mode(self):
         self.encoder = self.encoder.train()
+        self.decoder = self.decoder.train()
+
+
+class SeqTree2seq(nn.Module):
+    def __init__(self, embedding=None, is_eval=False, model_path=None):
+        super(SeqTree2seq, self).__init__()
+        utterance_encoder = Encoder(embedding, config.vocab_size,
+                          config.embedding_size, config.hidden_size,
+                          config.num_layers,
+                          config.dropout)
+
+        tree_encoder = TreeEncoder(config.embedding_size, config.hidden_size) ## todo: check tree dimension
+
+        decoder = Decoder(embedding, config.vocab_size, #todo: check decoder dimension
+                          config.embedding_size, 3 * config.hidden_size,
+                          config.num_layers,
+                          config.dropout)
+
+        if config.use_gpu and torch.cuda.is_available():
+            device = torch.device(config.device)
+            utterance_encoder = utterance_encoder.to(device)
+            tree_encoder = tree_encoder.to(device)
+            decoder = decoder.to(device)
+
+        self.utterance_encoder = utterance_encoder
+        self.tree_encoder = tree_encoder
+        self.decoder = decoder
+
+        if is_eval:
+            self.eval_mode()
+
+        if model_path is not None:
+            ckpt = torch.load(model_path)
+            self.utterance_encoder.load_state_dict(ckpt["utterance_encoder_state_dict"])
+            self.tree_encoder.load_state_dict(ckpt["tree_encoder_encoder_state_dict"])
+            self.decoder.load_state_dict(ckpt["decoder_state_dict"])
+
+    def eval_mode(self):
+        self.utterance_encoder = self.utterance_encoder.eval()
+        self.tree_encoder = self.tree_encoder.eval()
+        self.decoder = self.decoder.eval()
+
+    def train_mode(self):
+        self.utterance_encoder = self.utterance_encoder.train()
+        self.tree_encoder = self.tree_encoder.train()
         self.decoder = self.decoder.train()

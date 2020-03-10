@@ -112,3 +112,5 @@ venv.bak/
 /result
 /squad
 debug.py
+qgevalcap/meteor/meteor-1.5.jar
+qgevalcap/meteor/data
