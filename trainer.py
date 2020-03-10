@@ -109,7 +109,7 @@ class Trainer(object):
 
     def step(self, train_data):
         if config.use_tag:
-            src_seq, ext_src_seq, src_len, trg_seq, ext_trg_seq, trg_len, tag_seq, tree, sent, _ = train_data
+            src_seq, ext_src_seq, src_len, trg_seq, ext_trg_seq, trg_len, tag_seq, _, tree, sent = train_data
         # else:
         #     src_seq, ext_src_seq, src_len, trg_seq, ext_trg_seq, trg_len, tree, _ = train_data
         #     tag_seq = None
@@ -123,13 +123,11 @@ class Trainer(object):
             trg_seq = trg_seq.to(config.device)
             ext_trg_seq = ext_trg_seq.to(config.device)
             enc_mask = enc_mask.to(config.device)
-            tree = tree.to(config.device)
             sent = sent.to(config.device)
             if config.use_tag:
                 tag_seq = tag_seq.to(config.device)
             else:
                 tag_seq = None
-
         enc_outputs, enc_states = self.model.utterance_encoder(src_seq, src_len, tag_seq)
         tree_enc_outputs = self.model.tree_encoder(tree, sent) #todo construct tree input
         encode_outputs = torch.cat(enc_outputs, tree_enc_outputs) # todo: check cat dim

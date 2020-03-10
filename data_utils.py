@@ -457,7 +457,7 @@ def collate_fn_tag(data):
     sents, _ = merge(sents)
 
     assert src_seqs.size(1) == tag_seqs.size(1), "length of tokens and tags should be equal"
-    assert len(trees) == src_seqs.size(1), "length of src and tree should be equal:{}, {}".format(tree_len, src_len)
+    assert len(trees) == src_seqs.size(0), "length of src and tree should be equal:{}, {}".format(len(trees), src_seqs.size(0))
     return src_seqs, ext_src_seqs, src_len, trg_seqs, ext_trg_seqs, trg_len, tag_seqs, oov_lst, trees, sents
 
 
