@@ -52,7 +52,7 @@ class Trainer(object):
                  + list(self.model.decoder.parameters())
 
         self.lr = config.lr
-        self.optim = optim.SGD(params, self.lr, momentum=0.8)
+        self.optim = optim.SGD(filter(lambda p: p.requires_grad, params), self.lr, momentum=0.8)
         # self.optim = optim.Adam(params)
         self.criterion = nn.CrossEntropyLoss(ignore_index=0)
 

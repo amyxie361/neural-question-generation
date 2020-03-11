@@ -87,7 +87,7 @@ class TreeEncoder(nn.Module):
 
     def node_forward(self, inputs, child_c, child_h):
         child_h_sum = torch.sum(child_h, dim=0, keepdim=True)
-
+        print(inputs, inputs.size())
         iou = self.ioux(inputs) + self.iouh(child_h_sum)
         i, o, u = torch.split(iou, iou.size(1) // 3, dim=1)
         i, o, u = F.sigmoid(i), F.sigmoid(o), F.tanh(u)
@@ -108,7 +108,9 @@ class TreeEncoder(nn.Module):
 
         if tree.num_children == 0:
             child_c = inputs[0].detach().new(1, self.mem_dim).fill_(0.).requires_grad_()
+            #child_c = torch.zeros([1, self.mem_dim], dtype=torch.long)
             child_h = inputs[0].detach().new(1, self.mem_dim).fill_(0.).requires_grad_()
+            #child_h = torch.zeros([1, self.mem_dim], dtype=torch.long)
         else:
             child_c, child_h = zip(*map(lambda x: x.state, tree.children))
             child_c, child_h = torch.cat(child_c, dim=0), torch.cat(child_h, dim=0)
@@ -264,7 +266,7 @@ class SeqTree2seq(nn.Module):
                           config.num_layers,
                           config.dropout)
 
-        tree_encoder = TreeEncoder(config.embedding_size, config.hidden_size) ## todo: check tree dimension
+        tree_encoder = TreeEncoder(config.hidden_size, config.hidden_size) ## todo: check tree dimension
 
         decoder = Decoder(embedding, config.vocab_size, #todo: check decoder dimension
                           config.embedding_size, 3 * config.hidden_size,
