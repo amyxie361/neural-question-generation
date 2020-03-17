@@ -26,6 +26,7 @@ use_gpu = True
 debug = True
 vocab_size = 45000
 freeze_embedding = True
+sparsity = False
 
 num_epochs = 20
 max_seq_len = 400

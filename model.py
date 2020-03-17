@@ -4,10 +4,9 @@ import torch.nn as nn
 import torch.nn.functional as F
 from torch.nn.utils.rnn import pad_packed_sequence, pack_padded_sequence
 from torch_scatter import scatter_max
-from data_utils import UNK_ID
+from data_utils import UNK_ID, PAD_ID
 
 INF = 1e12
-
 
 class Encoder(nn.Module):
     def __init__(self, embeddings, vocab_size, embedding_size, hidden_size, num_layers, dropout):
@@ -59,7 +58,7 @@ class Encoder(nn.Module):
         h, c = states
 
         # self attention
-        mask = (src_seq == 0).byte()
+        mask = (src_seq == 0).bool()
         memories = self.linear_trans(outputs)
         outputs = self.gated_self_attn(outputs, memories, mask)
 
@@ -70,12 +69,14 @@ class Encoder(nn.Module):
         c = c.view(2, 2, b, d)
         c = torch.cat((c[:, 0, :, :], c[:, 1, :, :]), dim=-1)
         concat_states = (h, c)
-
         return outputs, concat_states
 
 class TreeEncoder(nn.Module):
     def __init__(self, in_dim, mem_dim):
         super(TreeEncoder, self).__init__()
+
+        self.emb = nn.Embedding(config.vocab_size, config.hidden_size,
+                                padding_idx=PAD_ID, sparse=config.sparsity)
 
         self.in_dim = in_dim
         self.mem_dim = mem_dim
@@ -87,7 +88,7 @@ class TreeEncoder(nn.Module):
 
     def node_forward(self, inputs, child_c, child_h):
         child_h_sum = torch.sum(child_h, dim=0, keepdim=True)
-        print(inputs, inputs.size())
+        # print(inputs, inputs.size())
         iou = self.ioux(inputs) + self.iouh(child_h_sum)
         i, o, u = torch.split(iou, iou.size(1) // 3, dim=1)
         i, o, u = F.sigmoid(i), F.sigmoid(o), F.tanh(u)
@@ -100,22 +101,22 @@ class TreeEncoder(nn.Module):
 
         c = torch.mul(i, u) + torch.sum(fc, dim=0, keepdim=True)
         h = torch.mul(o, F.tanh(c))
-        return c, h
+        return o, c, h
 
     def forward(self, tree, inputs):
+        embed = self.emb(inputs)[0]
         for idx in range(tree.num_children):
             self.forward(tree.children[idx], inputs)
 
         if tree.num_children == 0:
-            child_c = inputs[0].detach().new(1, self.mem_dim).fill_(0.).requires_grad_()
+            child_c = embed[0].detach().new(1, self.mem_dim).fill_(0.).requires_grad_()
             #child_c = torch.zeros([1, self.mem_dim], dtype=torch.long)
-            child_h = inputs[0].detach().new(1, self.mem_dim).fill_(0.).requires_grad_()
+            child_h = embed[0].detach().new(1, self.mem_dim).fill_(0.).requires_grad_()
             #child_h = torch.zeros([1, self.mem_dim], dtype=torch.long)
         else:
-            child_c, child_h = zip(*map(lambda x: x.state, tree.children))
+            child_o, child_c, child_h = zip(*map(lambda x: x.state, tree.children))
             child_c, child_h = torch.cat(child_c, dim=0), torch.cat(child_h, dim=0)
-
-        tree.state = self.node_forward(inputs[tree.idx], child_c, child_h)
+        tree.state = self.node_forward(embed[tree.idx], child_c, child_h)
         return tree.state
 
 
@@ -130,8 +131,8 @@ class Decoder(nn.Module):
 
         if num_layers == 1:
             dropout = 0.0
-        self.encoder_trans = nn.Linear(2 * hidden_size, hidden_size)
-        self.reduce_layer = nn.Linear(embedding_size + hidden_size, embedding_size)
+        self.encoder_trans = nn.Linear(hidden_size, hidden_size)
+        self.reduce_layer = nn.Linear(embedding_size + 2 * hidden_size, embedding_size)
         self.lstm = nn.LSTM(embedding_size, hidden_size, batch_first=True,
                             num_layers=num_layers, bidirectional=False, dropout=dropout)
         self.concat_layer = nn.Linear(2 * hidden_size, hidden_size)
@@ -150,7 +151,7 @@ class Decoder(nn.Module):
     def get_encoder_features(self, encoder_outputs):
         return self.encoder_trans(encoder_outputs)
 
-    def forward(self, trg_seq, ext_src_seq, init_states, encoder_outputs, encoder_mask):
+    def forward(self, trg_seq, ext_src_seq, init_states, tree_enc_states,  encoder_outputs, encoder_mask):
         # trg_seq : [b,t]
         # init_states : [2,b,d]
         # encoder_outputs : [b,t,d]
@@ -165,7 +166,12 @@ class Decoder(nn.Module):
         for i in range(max_len):
             y_i = trg_seq[:, i].unsqueeze(1)  # [b, 1]
             embedded = self.embedding(y_i)  # [b, 1, d]
-            lstm_inputs = self.reduce_layer(torch.cat([embedded, prev_context], dim=2))
+            #print("======", embedded.size(), prev_context.size())
+            #print(tree_enc_states[0].expand(embedded.size(1), config.batch_size, config.hidden_size).size())
+            lstm_inputs = self.reduce_layer(torch.cat([
+                tree_enc_states[0].expand(embedded.size(0), config.batch_size, config.hidden_size),
+                tree_enc_states[1].expand(embedded.size(0), config.batch_size, config.hidden_size),
+                embedded, prev_context], dim=2))
             output, states = self.lstm(lstm_inputs, prev_states)
             # encoder-decoder attention
             context, energy = self.attention(output, memories, encoder_mask)
@@ -269,7 +275,7 @@ class SeqTree2seq(nn.Module):
         tree_encoder = TreeEncoder(config.hidden_size, config.hidden_size) ## todo: check tree dimension
 
         decoder = Decoder(embedding, config.vocab_size, #todo: check decoder dimension
-                          config.embedding_size, 3 * config.hidden_size,
+                          config.embedding_size, 2 * config.hidden_size,
                           config.num_layers,
                           config.dropout)
 

@@ -249,7 +249,7 @@ class TreeData(data.Dataset):
 
         self.sentences = self.read_sentences(path + '.toks')
 
-        self.trees = self.read_trees(path + '.cparents')
+        self.trees = self.read_trees(path + '.parents')
 
         assert(len(self.sentences) == len(self.trees))
         self.size = len(self.sentences)

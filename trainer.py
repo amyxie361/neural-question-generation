@@ -114,7 +114,8 @@ class Trainer(object):
         #     src_seq, ext_src_seq, src_len, trg_seq, ext_trg_seq, trg_len, tree, _ = train_data
         #     tag_seq = None
         src_len = torch.tensor(src_len, dtype=torch.long)
-        enc_mask = (src_seq == 0).byte()
+        #enc_mask = torch.cat((torch.ones([1, 1]).bool(), (src_seq == 0).bool()), axis=1)
+        enc_mask = (src_seq == 0).bool()
 
         if config.use_gpu:
             src_seq = src_seq.to(config.device)
@@ -131,9 +132,19 @@ class Trainer(object):
 
         tree = tree[0] # TODO: tree can't be batched
         enc_outputs, enc_states = self.model.utterance_encoder(src_seq, src_len, tag_seq)
-        tree_enc_outputs = self.model.tree_encoder(tree, sent) #todo construct tree input
-        encode_outputs = torch.cat(enc_outputs, tree_enc_outputs) # todo: check cat dim
-        encode_states = enc_states # todo: same as above
+        tree_enc_o, tree_enc_c, tree_enc_h = self.model.tree_encoder(tree, sent) #todo construct tree input
+        tree_enc_o_double = torch.cat((tree_enc_o[0], tree_enc_o[0])).unsqueeze(0)
+        #tree_enc_c_double = torch.cat((tree_enc_c[0], tree_enc_c[0])).unsqueeze(0)
+        #tree_enc_h_double = torch.cat((tree_enc_h[0], tree_enc_h[0])).unsqueeze(0)
+        encode_outputs = torch.cat((tree_enc_o_double, enc_outputs[0])).unsqueeze(0) # todo: check cat dim
+        enc_h, enc_c = enc_states
+        tree_enc_states = (tree_enc_h.unsqueeze(0), tree_enc_c.unsqueeze(0))
+        #tree_enc_c_dd =  torch.cat((tree_enc_c_double,  tree_enc_c_double), axis=0).unsqueeze(1)
+        #tree_enc_h_dd =  torch.cat((tree_enc_h_double,  tree_enc_h_double), axis=0).unsqueeze(1)
+        #encode_c = torch.cat((tree_enc_c_double, enc_c[:, 0, :]), axis=1)
+        #encode_h = torch.cat((tree_enc_h_double, enc_h[:, 0, :]), axis=1)
+        # encode_c: 3x600
+        encode_states = (enc_h, enc_c) # todo: same as above
         encode_mask = enc_mask # todo: same as above
 
         sos_trg = trg_seq[:, :-1]
@@ -141,7 +152,8 @@ class Trainer(object):
 
         if config.use_pointer:
             eos_trg = ext_trg_seq[:, 1:]
-        logits = self.model.decoder(sos_trg, ext_src_seq, enc_states, encode_outputs, encode_states, encode_mask)
+        logits = self.model.decoder(sos_trg, ext_src_seq, encode_states, tree_enc_states, enc_outputs, encode_mask)
+        #logits = self.model.decoder(sos_trg, ext_src_seq, enc_states, encode_states,encode_mask)
         batch_size, nsteps, _ = logits.size()
         preds = logits.view(batch_size * nsteps, -1)
         targets = eos_trg.contiguous().view(-1)
@@ -157,7 +169,7 @@ class Trainer(object):
                 val_batch_loss = self.step(val_data)
                 val_losses.append(val_batch_loss.item())
                 msg2 = "{} => Evaluating :{}/{}".format(msg, i, num_val_batches)
-                print(msg2, end="\r")
+                # print(msg2, end="\r")
         # go back to train mode
         self.model.train_mode()
         val_loss = np.mean(val_losses)
