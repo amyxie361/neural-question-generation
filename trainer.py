@@ -108,8 +108,8 @@ class Trainer(object):
                   .format(epoch, user_friendly_time(time_since(start)), batch_loss, val_loss))
 
     def step(self, train_data):
-        if config.use_tag:
-            src_seq, ext_src_seq, src_len, trg_seq, ext_trg_seq, trg_len, tag_seq, _, tree, sent = train_data
+        #if config.use_tag:
+        src_seq, ext_src_seq, src_len, trg_seq, ext_trg_seq, trg_len, tag_seq, _, tree, sent = train_data
         # else:
         #     src_seq, ext_src_seq, src_len, trg_seq, ext_trg_seq, trg_len, tree, _ = train_data
         #     tag_seq = None
@@ -136,7 +136,10 @@ class Trainer(object):
         tree_enc_o_double = torch.cat((tree_enc_o[0], tree_enc_o[0])).unsqueeze(0)
         #tree_enc_c_double = torch.cat((tree_enc_c[0], tree_enc_c[0])).unsqueeze(0)
         #tree_enc_h_double = torch.cat((tree_enc_h[0], tree_enc_h[0])).unsqueeze(0)
-        encode_outputs = torch.cat((tree_enc_o_double, enc_outputs[0])).unsqueeze(0) # todo: check cat dim
+        tree_enc_o_double = tree_enc_o_double.expand(enc_outputs[0].size(0), 2 * config.hidden_size)
+        #print(tree_enc_o_double.size(), enc_outputs[0].size())
+        tree_output = tree_enc_o_double
+        #encode_outputs = torch.cat((tree_enc_o_double, enc_outputs[0]), axis=-1).unsqueeze(0) # todo: check cat dim
         enc_h, enc_c = enc_states
         tree_enc_states = (tree_enc_h.unsqueeze(0), tree_enc_c.unsqueeze(0))
         #tree_enc_c_dd =  torch.cat((tree_enc_c_double,  tree_enc_c_double), axis=0).unsqueeze(1)
@@ -145,14 +148,15 @@ class Trainer(object):
         #encode_h = torch.cat((tree_enc_h_double, enc_h[:, 0, :]), axis=1)
         # encode_c: 3x600
         encode_states = (enc_h, enc_c) # todo: same as above
-        encode_mask = enc_mask # todo: same as above
+        # encode_mask = enc_mask # todo: same as above
 
         sos_trg = trg_seq[:, :-1]
         eos_trg = trg_seq[:, 1:]
 
         if config.use_pointer:
             eos_trg = ext_trg_seq[:, 1:]
-        logits = self.model.decoder(sos_trg, ext_src_seq, encode_states, tree_enc_states, enc_outputs, encode_mask)
+        #print(sos_trg.size(), ext_src_seq.size(), encode_states[0].size(), tree_enc_states[0].size(), encode_outputs.size(), enc_mask.size())
+        logits = self.model.decoder(sos_trg, ext_src_seq, encode_states, tree_output, tree_enc_states, enc_outputs, enc_mask)
         #logits = self.model.decoder(sos_trg, ext_src_seq, enc_states, encode_states,encode_mask)
         batch_size, nsteps, _ = logits.size()
         preds = logits.view(batch_size * nsteps, -1)

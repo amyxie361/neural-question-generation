@@ -131,7 +131,7 @@ class Decoder(nn.Module):
 
         if num_layers == 1:
             dropout = 0.0
-        self.encoder_trans = nn.Linear(hidden_size, hidden_size)
+        self.encoder_trans = nn.Linear(2 * hidden_size, hidden_size)
         self.reduce_layer = nn.Linear(embedding_size + 2 * hidden_size, embedding_size)
         self.lstm = nn.LSTM(embedding_size, hidden_size, batch_first=True,
                             num_layers=num_layers, bidirectional=False, dropout=dropout)
@@ -151,7 +151,7 @@ class Decoder(nn.Module):
     def get_encoder_features(self, encoder_outputs):
         return self.encoder_trans(encoder_outputs)
 
-    def forward(self, trg_seq, ext_src_seq, init_states, tree_enc_states,  encoder_outputs, encoder_mask):
+    def forward(self, trg_seq, ext_src_seq, init_states, tree_output, tree_enc_states,  encoder_outputs, encoder_mask):
         # trg_seq : [b,t]
         # init_states : [2,b,d]
         # encoder_outputs : [b,t,d]
@@ -159,15 +159,14 @@ class Decoder(nn.Module):
 
         batch_size, max_len = trg_seq.size()
         hidden_size = encoder_outputs.size(-1)
-        memories = self.get_encoder_features(encoder_outputs)
+        memories = self.get_encoder_features(torch.cat([tree_output, encoder_outputs[0]], dim=-1).unsqueeze(0))
+        # print(tree_output.size(), encoder_outputs[0].size(), memories.size())
         logits = []
         prev_states = init_states
         prev_context = torch.zeros((batch_size, 1, hidden_size), device=config.device)
         for i in range(max_len):
             y_i = trg_seq[:, i].unsqueeze(1)  # [b, 1]
             embedded = self.embedding(y_i)  # [b, 1, d]
-            #print("======", embedded.size(), prev_context.size())
-            #print(tree_enc_states[0].expand(embedded.size(1), config.batch_size, config.hidden_size).size())
             lstm_inputs = self.reduce_layer(torch.cat([
                 tree_enc_states[0].expand(embedded.size(0), config.batch_size, config.hidden_size),
                 tree_enc_states[1].expand(embedded.size(0), config.batch_size, config.hidden_size),
