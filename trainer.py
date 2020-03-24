@@ -25,21 +25,21 @@ class Trainer(object):
         # train, dev loader
         print("load train data")
         self.train_loader = get_loader(config.train_src_file,
-                                       config.train_trg_file,
+                                       # config.train_tag_file,
                                        config.train_tree_file,
                                        word2idx,
                                        config.vocab_file,
                                        use_tag=config.use_tag,
                                        batch_size=config.batch_size,
                                        debug=config.debug)
-        self.dev_loader = get_loader(config.dev_src_file,
-                                     config.dev_trg_file,
-                                     config.dev_tree_file,
+        self.dev_loader = get_loader(config.train_src_file,
+                                     # config.dev_tag_file,
+                                     config.train_tree_file,
                                      word2idx,
                                      config.vocab_file,
                                      use_tag=config.use_tag,
                                      batch_size=128,
-                                     debug=config.debug)
+                                     debug=True)
 
         train_dir = os.path.join("./save", "seq2seq")
         self.model_dir = os.path.join(train_dir, "train_%d" % int(time.strftime("%m%d%H%M%S")))

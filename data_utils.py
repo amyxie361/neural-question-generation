@@ -247,13 +247,17 @@ class TreeData(data.Dataset):
 
         self.vocab = vocab
 
-        self.sentences = self.read_sentences(path + '.toks')
+        # self.sentences = self.read_sentences(path + '.toks')
+        self.sentences = []
 
-        self.trees = self.read_trees(path + '.parents')
+        # self.trees = self.read_trees(path + '.parents')
+        self.trees = []
 
-        assert(len(self.sentences) == len(self.trees))
-        self.size = len(self.sentences)
-        print("samples numbers:", self.size)
+        self.read_data(path)
+
+        # assert(len(self.sentences) == len(self.trees))
+        # self.size = len(self.sentences)
+        # print("samples numbers:", self.size)
 
     def __len__(self):
         return self.size
@@ -263,21 +267,30 @@ class TreeData(data.Dataset):
         sent = deepcopy(self.sentences[index])
         return tree, sent
 
-    def read_sentences(self, filename):
-        print("read sentence in tree")
-        with open(filename, 'r') as f:
-            sentences = [self.read_sentence(line) for line in tqdm(f.readlines())]
-        return sentences
+    def read_data(self, filename):
+        f = open(filename)
+        for line in tqdm(f):
+            data = json.loads(line)
+            sentence = " ".join(data["toks"])
+            parents = " ".join(data["parents"])
+            self.sentences.append(self.read_sentence(sentence))
+            self.trees.append(self.read_tree(parents))
+
+    # def read_sentences(self, filename):
+    #     print("read sentence in tree")
+    #     with open(filename, 'r') as f:
+    #         sentences = [self.read_sentence(line) for line in tqdm(f.readlines())]
+    #     return sentences
 
     def read_sentence(self, line):
         indices = self.vocab.convertToIdx(line.split(), UNK_TOKEN)
         return torch.tensor(indices, dtype=torch.long, device='cpu')
 
-    def read_trees(self, filename):
-        print("read tree")
-        with open(filename, 'r') as f:
-            trees = [self.read_tree(line) for line in tqdm(f.readlines())]
-        return trees
+    # def read_trees(self, filename):
+    #     print("read tree")
+    #     with open(filename, 'r') as f:
+    #         trees = [self.read_tree(line) for line in tqdm(f.readlines())]
+    #     return trees
 
     def read_tree(self, line):
         parents = list(map(int, line.split()))
@@ -307,40 +320,26 @@ class TreeData(data.Dataset):
                         idx = parent
         return root
 
-    def read_labels(self, filename):
-        with open(filename, 'r') as f:
-            labels = list(map(lambda x: float(x), f.readlines()))
-            labels = torch.tensor(labels, dtype=torch.float, device='cpu')
-        return labels
+    # def read_labels(self, filename):
+    #     with open(filename, 'r') as f:
+    #         labels = list(map(lambda x: float(x), f.readlines()))
+    #         labels = torch.tensor(labels, dtype=torch.float, device='cpu')
+    #     return labels
 
 class SQuadDatasetWithTag(data.Dataset):
-    def __init__(self, src_file, trg_file, tree_file, max_length, word2idx, vocab_file, debug=False):
+    def __init__(self, src_file, tree_file, max_length, word2idx, vocab_file, debug=False):
+        tags, srcs, self.trgs = pickle.load(open(src_file, 'rb'))
+
+        # lines = open(src_file, "r").readlines()
         self.srcs = []
         self.tags = []
-
-        lines = open(src_file, "r").readlines()
-        sentence, tags = [], []
         self.entity2idx = {"O": 0, "B_ans": 1, "I_ans": 2}
-        print("load original file")
-        for line in tqdm(lines):
-            line = line.strip()
-            if len(line) == 0:
-                sentence.insert(0, START_TOKEN)
-                sentence.append(END_TOKEN)
-                self.srcs.append(sentence)
-
-                tags.insert(0, self.entity2idx["O"])
-                tags.append(self.entity2idx["O"])
-                self.tags.append(tags)
-                assert len(sentence) == len(tags)
-                sentence, tags = [], []
-            else:
-                tokens = line.split("\t")
-                word, tag = tokens[0], tokens[1]
-                sentence.append(word)
-                tags.append(self.entity2idx[tag])
-
-        self.trgs = open(trg_file, "r").readlines()
+        # print("load original file")
+        for idx in tqdm(range(len(tags))):
+            tag = [self.entity2idx["O"]] + [self.entity2idx[t] for t in tags[idx]] + [self.entity2idx["O"]]
+            src = [START_TOKEN] + srcs[idx] + [END_TOKEN]
+            self.srcs.append(src)
+            self.tags.append(tag)
 
         print("load vocab")
 
@@ -354,9 +353,9 @@ class SQuadDatasetWithTag(data.Dataset):
         self.trees = self.tree_data.trees
         self.sents = self.tree_data.sentences
 
-        assert len(self.srcs) == len(self.trgs), \
+        assert len(self.srcs) == len(self.sents), \
             "the number of source sequence {}" " and target sequence {} must be the same" \
-                .format(len(self.srcs), len(self.trgs))
+                .format(len(self.srcs), len(self.sents))
 
         self.max_length = max_length
         self.word2idx = word2idx
@@ -461,10 +460,10 @@ def collate_fn_tag(data):
     return src_seqs, ext_src_seqs, src_len, trg_seqs, ext_trg_seqs, trg_len, tag_seqs, oov_lst, trees, sents
 
 
-def get_loader(src_file, trg_file, tree_file, word2idx, vocab_file,
+def get_loader(src_file, tree_file, word2idx, vocab_file,
                batch_size, use_tag=False, debug=False, shuffle=False):
     # if use_tag:
-    dataset = SQuadDatasetWithTag(src_file, trg_file, tree_file, config.max_seq_len,
+    dataset = SQuadDatasetWithTag(src_file, tree_file, config.max_seq_len,
                                   word2idx, vocab_file, debug)
     dataloader = data.DataLoader(dataset=dataset,
                                  batch_size=batch_size,
@@ -780,6 +779,33 @@ def make_conll_format(examples, src_file, trg_file):
 
     src_fw.close()
     trg_fw.close()
+
+
+def make_tags(examples):
+    tag_list = []
+    tok_list = []
+    question_list = []
+    for example in tqdm(examples):
+        q_tokens = example["ques_tokens"]
+        c_tokens = example["context_tokens"]
+        start = example["y1s"][0]
+        end = example["y2s"][0]
+        tags = []
+
+        for idx in range(len(c_tokens)):
+            if idx == start:
+                tag = "B_ans"
+            elif idx < end + 1:
+                tag = "I_ans"
+            else:
+                tag = "O"
+            tags.append(tag)
+
+        tag_list.append(tags)
+        tok_list.append(c_tokens)
+        question_list.append(" ".join(q_tokens))
+
+    return tag_list, tok_list, question_list
 
 
 def split_dev(input_file, dev_file, test_file):
