@@ -327,8 +327,9 @@ class TreeData(data.Dataset):
     #     return labels
 
 class SQuadDatasetWithTag(data.Dataset):
-    def __init__(self, src_file, tree_file, max_length, word2idx, vocab_file, debug=False):
+    def __init__(self, src_file, tree_file, max_length, word2idx, vocab_file, debug=False, num=config.debug_num):
         tags, srcs, self.trgs = pickle.load(open(src_file, 'rb'))
+        print(self.trgs[0])
 
         # lines = open(src_file, "r").readlines()
         self.srcs = []
@@ -362,12 +363,13 @@ class SQuadDatasetWithTag(data.Dataset):
         self.num_seqs = len(self.srcs)
 
         if debug:
-            self.srcs = self.srcs[:100]
-            self.trgs = self.trgs[:100]
-            self.tags = self.tags[:100]
-            self.trees = self.trees[:100]
-            self.sents = self.sents[:100]
-            self.num_seqs = 100
+            #num = config.debug_num 
+            self.srcs = self.srcs[:num]
+            self.trgs = self.trgs[:num]
+            self.tags = self.tags[:num]
+            self.trees = self.trees[:num]
+            self.sents = self.sents[:num]
+            self.num_seqs = num
 
     def __getitem__(self, index):
         src_seq = self.srcs[index]
@@ -461,10 +463,10 @@ def collate_fn_tag(data):
 
 
 def get_loader(src_file, tree_file, word2idx, vocab_file,
-               batch_size, use_tag=False, debug=False, shuffle=False):
+               batch_size, use_tag=False, debug=False, num=config.debug_num, shuffle=False):
     # if use_tag:
     dataset = SQuadDatasetWithTag(src_file, tree_file, config.max_seq_len,
-                                  word2idx, vocab_file, debug)
+                                  word2idx, vocab_file, debug, num)
     dataloader = data.DataLoader(dataset=dataset,
                                  batch_size=batch_size,
                                  shuffle=shuffle,

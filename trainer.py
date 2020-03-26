@@ -6,6 +6,7 @@ import numpy as np
 import torch
 import torch.nn as nn
 import torch.optim as optim
+from tqdm import tqdm
 
 import config
 from data_utils import get_loader, eta, user_friendly_time, progress_bar, time_since
@@ -32,16 +33,17 @@ class Trainer(object):
                                        use_tag=config.use_tag,
                                        batch_size=config.batch_size,
                                        debug=config.debug)
-        self.dev_loader = get_loader(config.train_src_file,
+        self.dev_loader = get_loader(config.dev_src_file,
                                      # config.dev_tag_file,
-                                     config.train_tree_file,
+                                     config.dev_tree_file,
                                      word2idx,
                                      config.vocab_file,
                                      use_tag=config.use_tag,
-                                     batch_size=128,
-                                     debug=True)
+                                     batch_size=1,
+                                     debug=config.debug,
+                                     num=100)
 
-        train_dir = os.path.join("./save", "seq2seq")
+        train_dir = os.path.join("./save", config.exp_name)
         self.model_dir = os.path.join(train_dir, "train_%d" % int(time.strftime("%m%d%H%M%S")))
         if not os.path.exists(self.model_dir):
             os.makedirs(self.model_dir)
@@ -98,11 +100,13 @@ class Trainer(object):
                     .format(batch_idx, batch_num, progress_bar(batch_idx, batch_num),
                             eta(start, batch_idx, batch_num), batch_loss)
                 print(msg, end="\r")
+                if batch_idx % 1000 == 0:
+                    print(msg)
 
             val_loss = self.evaluate(msg)
             if val_loss <= best_loss:
                 best_loss = val_loss
-                self.save_model(val_loss, epoch)
+            self.save_model(val_loss, epoch)
 
             print("Epoch {} took {} - final loss : {:.4f} - val loss :{:.4f}"
                   .format(epoch, user_friendly_time(time_since(start)), batch_loss, val_loss))
@@ -133,31 +137,26 @@ class Trainer(object):
         tree = tree[0] # TODO: tree can't be batched
         enc_outputs, enc_states = self.model.utterance_encoder(src_seq, src_len, tag_seq)
         tree_enc_o, tree_enc_c, tree_enc_h = self.model.tree_encoder(tree, sent) #todo construct tree input
+        #tree_enc_o = torch.zeros(tree_enc_o.size()).to(config.device)
+        #tree_enc_c = torch.zeros(tree_enc_c.size()).to(config.device)
+        #tree_enc_h = torch.zeros(tree_enc_h.size()).to(config.device)
         tree_enc_o_double = torch.cat((tree_enc_o[0], tree_enc_o[0])).unsqueeze(0)
-        #tree_enc_c_double = torch.cat((tree_enc_c[0], tree_enc_c[0])).unsqueeze(0)
-        #tree_enc_h_double = torch.cat((tree_enc_h[0], tree_enc_h[0])).unsqueeze(0)
         tree_enc_o_double = tree_enc_o_double.expand(enc_outputs[0].size(0), 2 * config.hidden_size)
-        #print(tree_enc_o_double.size(), enc_outputs[0].size())
         tree_output = tree_enc_o_double
-        #encode_outputs = torch.cat((tree_enc_o_double, enc_outputs[0]), axis=-1).unsqueeze(0) # todo: check cat dim
         enc_h, enc_c = enc_states
         tree_enc_states = (tree_enc_h.unsqueeze(0), tree_enc_c.unsqueeze(0))
-        #tree_enc_c_dd =  torch.cat((tree_enc_c_double,  tree_enc_c_double), axis=0).unsqueeze(1)
-        #tree_enc_h_dd =  torch.cat((tree_enc_h_double,  tree_enc_h_double), axis=0).unsqueeze(1)
-        #encode_c = torch.cat((tree_enc_c_double, enc_c[:, 0, :]), axis=1)
-        #encode_h = torch.cat((tree_enc_h_double, enc_h[:, 0, :]), axis=1)
         # encode_c: 3x600
+        #enc_h = torch.zeros(enc_h.size()).to(config.device)
+        #enc_c = torch.zeros(enc_c.size()).to(config.device)
+        #enc_outputs = torch.zeros(enc_outputs.size()).to(config.device)
         encode_states = (enc_h, enc_c) # todo: same as above
-        # encode_mask = enc_mask # todo: same as above
 
         sos_trg = trg_seq[:, :-1]
         eos_trg = trg_seq[:, 1:]
 
         if config.use_pointer:
             eos_trg = ext_trg_seq[:, 1:]
-        #print(sos_trg.size(), ext_src_seq.size(), encode_states[0].size(), tree_enc_states[0].size(), encode_outputs.size(), enc_mask.size())
         logits = self.model.decoder(sos_trg, ext_src_seq, encode_states, tree_output, tree_enc_states, enc_outputs, enc_mask)
-        #logits = self.model.decoder(sos_trg, ext_src_seq, enc_states, encode_states,encode_mask)
         batch_size, nsteps, _ = logits.size()
         preds = logits.view(batch_size * nsteps, -1)
         targets = eos_trg.contiguous().view(-1)
@@ -166,13 +165,13 @@ class Trainer(object):
 
     def evaluate(self, msg):
         self.model.eval_mode()
-        num_val_batches = len(self.dev_loader)
+        # num_val_batches = len(self.dev_loader)
         val_losses = []
-        for i, val_data in enumerate(self.dev_loader, start=1):
+        for i, val_data in tqdm(enumerate(self.dev_loader, start=1)):
             with torch.no_grad():
                 val_batch_loss = self.step(val_data)
                 val_losses.append(val_batch_loss.item())
-                msg2 = "{} => Evaluating :{}/{}".format(msg, i, num_val_batches)
+                # msg2 = "{} => Evaluating :{}/{}".format(msg, i, num_val_batches)
                 # print(msg2, end="\r")
         # go back to train mode
         self.model.train_mode()

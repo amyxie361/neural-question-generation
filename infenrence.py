@@ -1,4 +1,4 @@
-from model import Seq2seq
+from model import SeqTree2seq
 import os
 from data_utils import START_TOKEN, END_ID, get_loader, UNK_ID, outputids2words
 import torch
@@ -36,17 +36,23 @@ class BeamSearcher(object):
             word2idx = pickle.load(f)
 
         self.output_dir = output_dir
-        self.test_data = open(config.test_trg_file, "r").readlines()
+        #self.test_data = open(config.test_trg_file, "r").readlines()
         self.data_loader = get_loader(config.dev_src_file,
                                       # config.dev_tag_file,
+                                      config.dev_tree_file,
                                       word2idx,
-                                      batch_size=1,
+                                      config.vocab_file,
                                       use_tag=config.use_tag,
-                                      shuffle=False)
+                                      batch_size=1,
+                                      shuffle=False,
+                                      debug=config.debug,
+                                      num=100)
+
+        _, _, self.test_data = pickle.load(open(config.dev_src_file, 'rb'))
 
         self.tok2idx = word2idx
         self.idx2tok = {idx: tok for tok, idx in self.tok2idx.items()}
-        self.model = Seq2seq(model_path=model_path)
+        self.model = SeqTree2seq(model_path=model_path)
         self.pred_dir = output_dir + "/generated.txt"
         self.golden_dir = output_dir + "/golden.txt"
         if not os.path.exists(output_dir):
@@ -61,13 +67,17 @@ class BeamSearcher(object):
         golden_fw = open(self.golden_dir, "w")
         for i, eval_data in enumerate(self.data_loader):
             if config.use_tag:
-                src_seq, ext_src_seq, src_len, trg_seq, \
-                ext_trg_seq, trg_len, tag_seq, oov_lst = eval_data
+                src_seq, ext_src_seq, src_len, trg_seq, ext_trg_seq, trg_len, tag_seq, oov_lst, tree, sent = eval_data
+                #src_seq, ext_src_seq, src_len, trg_seq, \
+                #ext_trg_seq, trg_len, tag_seq, oov_lst = eval_data
             else:
                 src_seq, ext_src_seq, src_len, \
                 trg_seq, ext_trg_seq, trg_len, oov_lst = eval_data
                 tag_seq = None
-            best_question = self.beam_search(src_seq, ext_src_seq, src_len, tag_seq)
+            trg_seq = trg_seq.tolist()[0]
+            #print(trg_seq)
+            print(" ".join([self.idx2tok[id_] for id_ in trg_seq]))
+            best_question = self.beam_search(src_seq, ext_src_seq, src_len, tag_seq, tree, sent)
             # discard START  token
             output_indices = [int(idx) for idx in best_question.tokens[1:-1]]
             decoded_words = outputids2words(output_indices, self.idx2tok, oov_lst[0])
@@ -77,17 +87,19 @@ class BeamSearcher(object):
             except ValueError:
                 decoded_words = decoded_words
             decoded_words = " ".join(decoded_words)
+            print(decoded_words)
+            # golden_question = trg_seq
             golden_question = self.test_data[i]
-            print("write {}th question".format(i))
+            #print("write {}th question".format(i))
             pred_fw.write(decoded_words + "\n")
-            golden_fw.write(golden_question)
+            golden_fw.write(golden_question + "\n")
 
         pred_fw.close()
         golden_fw.close()
 
-    def beam_search(self, src_seq, ext_src_seq, src_len, tag_seq):
+    def beam_search(self, src_seq, ext_src_seq, src_len, tag_seq, tree, sent):
         zeros = torch.zeros_like(src_seq)
-        enc_mask = torch.ByteTensor(src_seq == zeros)
+        enc_mask = torch.BoolTensor(src_seq == zeros)
         src_len = torch.LongTensor(src_len)
         prev_context = torch.zeros(1, 1, 2 * config.hidden_size)
 
@@ -97,12 +109,25 @@ class BeamSearcher(object):
             src_len = src_len.to(config.device)
             enc_mask = enc_mask.to(config.device)
             prev_context = prev_context.to(config.device)
-
+            sent = sent.to(config.device)
             if config.use_tag:
                 tag_seq = tag_seq.to(config.device)
+
         # forward encoder
-        enc_outputs, enc_states = self.model.encoder(src_seq, src_len, tag_seq)
-        h, c = enc_states  # [2, b, d] but b = 1
+        tree = tree[0]
+        enc_outputs, enc_states = self.model.utterance_encoder(src_seq, src_len, tag_seq)
+        tree_enc_o, tree_enc_c, tree_enc_h = self.model.tree_encoder(tree, sent)
+        tree_enc_o_double = torch.cat((tree_enc_o[0], tree_enc_o[0])).unsqueeze(0)
+        tree_enc_o_double = tree_enc_o_double.expand(enc_outputs[0].size(0), 2 * config.hidden_size)
+        tree_output = tree_enc_o_double
+        h, c = enc_states
+        #h = torch.zeros(h.size()).todevice(config.device)
+        #c = torch.zeros(c.size()).todevice(config.device)
+        #enc_outputs = torch.zeros(enc_outputs.size()).todevice(config.device)
+        tree_enc_states = (tree_enc_h.unsqueeze(0), tree_enc_c.unsqueeze(0))
+        # encode_states = (enc_h, enc_c)
+
+        # h, c = enc_states  # [2, b, d] but b = 1
         hypotheses = [Hypothesis(tokens=[self.tok2idx[START_TOKEN]],
                                  log_probs=[0.0],
                                  state=(h[:, 0, :], c[:, 0, :]),
@@ -110,7 +135,8 @@ class BeamSearcher(object):
         # tile enc_outputs, enc_mask for beam search
         ext_src_seq = ext_src_seq.repeat(config.beam_size, 1)
         enc_outputs = enc_outputs.repeat(config.beam_size, 1, 1)
-        enc_features = self.model.decoder.get_encoder_features(enc_outputs)
+
+        enc_features = self.model.decoder.get_encoder_features(enc_outputs, tree_output)
         enc_mask = enc_mask.repeat(config.beam_size, 1)
         num_steps = 0
         results = []
@@ -139,7 +165,7 @@ class BeamSearcher(object):
             # [beam_size, |V|]
             logits, states, context_vector = self.model.decoder.decode(prev_y, ext_src_seq,
                                                                        prev_states, prev_context,
-                                                                       enc_features, enc_mask)
+                                                                       enc_features, enc_mask, tree_enc_states)
             h_state, c_state = states
             log_probs = F.log_softmax(logits, dim=1)
             top_k_log_probs, top_k_ids \

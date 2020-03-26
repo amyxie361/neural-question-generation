@@ -72,11 +72,15 @@ class Encoder(nn.Module):
         return outputs, concat_states
 
 class TreeEncoder(nn.Module):
-    def __init__(self, in_dim, mem_dim):
+    def __init__(self, embeddings,vocab_size, embedding_size, in_dim, mem_dim):
         super(TreeEncoder, self).__init__()
 
         self.emb = nn.Embedding(config.vocab_size, config.hidden_size,
                                 padding_idx=PAD_ID, sparse=config.sparsity)
+
+        if embeddings is not None:
+             self.embedding = nn.Embedding(vocab_size, embedding_size). \
+                     from_pretrained(embeddings, freeze=config.freeze_embedding)
 
         self.in_dim = in_dim
         self.mem_dim = mem_dim
@@ -132,7 +136,7 @@ class Decoder(nn.Module):
         if num_layers == 1:
             dropout = 0.0
         self.encoder_trans = nn.Linear(2 * hidden_size, hidden_size)
-        self.reduce_layer = nn.Linear(embedding_size + 2 * hidden_size, embedding_size)
+        self.reduce_layer = nn.Linear(embedding_size + hidden_size, embedding_size)
         self.lstm = nn.LSTM(embedding_size, hidden_size, batch_first=True,
                             num_layers=num_layers, bidirectional=False, dropout=dropout)
         self.concat_layer = nn.Linear(2 * hidden_size, hidden_size)
@@ -148,7 +152,8 @@ class Decoder(nn.Module):
 
         return context_vector, energy
 
-    def get_encoder_features(self, encoder_outputs):
+    def get_encoder_features(self, encoder_outputs, tree_output):
+        encoder_outputs = torch.cat([tree_output, encoder_outputs[0]], dim=-1).unsqueeze(0)
         return self.encoder_trans(encoder_outputs)
 
     def forward(self, trg_seq, ext_src_seq, init_states, tree_output, tree_enc_states,  encoder_outputs, encoder_mask):
@@ -159,7 +164,7 @@ class Decoder(nn.Module):
 
         batch_size, max_len = trg_seq.size()
         hidden_size = encoder_outputs.size(-1)
-        memories = self.get_encoder_features(torch.cat([tree_output, encoder_outputs[0]], dim=-1).unsqueeze(0))
+        memories = self.get_encoder_features(encoder_outputs, tree_output)
         # print(tree_output.size(), encoder_outputs[0].size(), memories.size())
         logits = []
         prev_states = init_states
@@ -167,10 +172,7 @@ class Decoder(nn.Module):
         for i in range(max_len):
             y_i = trg_seq[:, i].unsqueeze(1)  # [b, 1]
             embedded = self.embedding(y_i)  # [b, 1, d]
-            lstm_inputs = self.reduce_layer(torch.cat([
-                tree_enc_states[0].expand(embedded.size(0), config.batch_size, config.hidden_size),
-                tree_enc_states[1].expand(embedded.size(0), config.batch_size, config.hidden_size),
-                embedded, prev_context], dim=2))
+            lstm_inputs = self.reduce_layer(torch.cat([embedded, prev_context], dim=2))
             output, states = self.lstm(lstm_inputs, prev_states)
             # encoder-decoder attention
             context, energy = self.attention(output, memories, encoder_mask)
@@ -198,12 +200,13 @@ class Decoder(nn.Module):
 
         return logits
 
-    def decode(self, y, ext_x, prev_states, prev_context, encoder_features, encoder_mask):
+    def decode(self, y, ext_x, prev_states, prev_context, encoder_features, encoder_mask, tree_enc_states):
         # forward one step lstm
         # y : [b]
 
         embedded = self.embedding(y.unsqueeze(1))
         lstm_inputs = self.reduce_layer(torch.cat([embedded, prev_context], dim=2))
+        # lstm_inputs = self.reduce_layer(torch.cat([embedded, prev_context], dim=2))
         output, states = self.lstm(lstm_inputs, prev_states)
         context, energy = self.attention(output, encoder_features, encoder_mask)
         concat_input = torch.cat((output, context), dim=2).squeeze(dim=1)
@@ -271,7 +274,7 @@ class SeqTree2seq(nn.Module):
                           config.num_layers,
                           config.dropout)
 
-        tree_encoder = TreeEncoder(config.hidden_size, config.hidden_size) ## todo: check tree dimension
+        tree_encoder = TreeEncoder(embedding, config.vocab_size, config.embedding_size, config.hidden_size, config.hidden_size) ## todo: check tree dimension
 
         decoder = Decoder(embedding, config.vocab_size, #todo: check decoder dimension
                           config.embedding_size, 2 * config.hidden_size,
@@ -294,7 +297,7 @@ class SeqTree2seq(nn.Module):
         if model_path is not None:
             ckpt = torch.load(model_path)
             self.utterance_encoder.load_state_dict(ckpt["utterance_encoder_state_dict"])
-            self.tree_encoder.load_state_dict(ckpt["tree_encoder_encoder_state_dict"])
+            self.tree_encoder.load_state_dict(ckpt["tree_encoder_state_dict"])
             self.decoder.load_state_dict(ckpt["decoder_state_dict"])
 
     def eval_mode(self):
