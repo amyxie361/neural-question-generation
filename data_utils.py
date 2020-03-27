@@ -11,6 +11,10 @@ import torch.utils.data as data
 from tqdm import tqdm
 import nltk
 
+import stanza
+stanza.download('en')
+nlp = stanza.Pipeline()
+
 import config
 
 PAD_TOKEN = "<PAD>"
@@ -328,12 +332,14 @@ class TreeData(data.Dataset):
 
 class SQuadDatasetWithTag(data.Dataset):
     def __init__(self, src_file, tree_file, max_length, word2idx, vocab_file, debug=False, num=config.debug_num):
-        tags, srcs, self.trgs = pickle.load(open(src_file, 'rb'))
+        tags, srcs, self.trgs, tree_info = pickle.load(open(src_file, 'rb'))
         print(self.trgs[0])
 
         # lines = open(src_file, "r").readlines()
         self.srcs = []
         self.tags = []
+        self.sents = []
+        self.trees = []
         self.entity2idx = {"O": 0, "B_ans": 1, "I_ans": 2}
         # print("load original file")
         for idx in tqdm(range(len(tags))):
@@ -341,22 +347,25 @@ class SQuadDatasetWithTag(data.Dataset):
             src = [START_TOKEN] + srcs[idx] + [END_TOKEN]
             self.srcs.append(src)
             self.tags.append(tag)
+            sent, tree = self.read_data(tree_info)
+            self.sents.append(sent)
+            self.trees.append(tree)
 
-        print("load vocab")
+        # print("load vocab")
 
-        vocab = Vocab(filename=vocab_file,
-                      data=[PAD_TOKEN, UNK_TOKEN,
-                            START_TOKEN, END_TOKEN])
+        # vocab = Vocab(filename=vocab_file,
+        #               data=[PAD_TOKEN, UNK_TOKEN,
+        #                     START_TOKEN, END_TOKEN])
 
-        print("load tree")
+        # print("load tree")
 
-        self.tree_data = TreeData(tree_file, vocab)
-        self.trees = self.tree_data.trees
-        self.sents = self.tree_data.sentences
+        # self.tree_data = TreeData(tree_file, vocab)
+        # self.trees = self.tree_data.trees
+        # self.sents = self.tree_data.sentences
 
-        assert len(self.srcs) == len(self.sents), \
-            "the number of source sequence {}" " and target sequence {} must be the same" \
-                .format(len(self.srcs), len(self.sents))
+        # assert len(self.srcs) == len(self.sents), \
+        #     "the number of source sequence {}" " and target sequence {} must be the same" \
+        #         .format(len(self.srcs), len(self.sents))
 
         self.max_length = max_length
         self.word2idx = word2idx
@@ -380,11 +389,56 @@ class SQuadDatasetWithTag(data.Dataset):
 
         tag_seq = torch.Tensor(tag_seq[:self.max_length])
         src_seq, ext_src_seq, oov_lst = self.context2ids(src_seq, self.word2idx)
+        sent_, ext_sent = self.question2ids(sent, self.word2idx, oov_lst)
+        tree_ = self.read_tree(tree)
         trg_seq, ext_trg_seq = self.question2ids(trg_seq, self.word2idx, oov_lst)
-        return src_seq, ext_src_seq, trg_seq, ext_trg_seq, oov_lst, tag_seq, tree, sent
+        return src_seq, ext_src_seq, trg_seq, ext_trg_seq, oov_lst, tag_seq, tree_, sent_
 
     def __len__(self):
         return self.num_seqs
+
+    def read_data(self, data):
+        # f = open(filename)
+        # for line in tqdm(f):
+        # data = json.loads(line)
+        sentence = " ".join(data["toks"])
+        parents = " ".join(data["parents"])
+
+        return sentence, parents
+            # self.sentences.append(self.read_sentence(sentence))
+            # self.trees.append(self.read_tree(parents))
+
+    # def read_sentence(self, line):
+    #     indices = self.vocab.convertToIdx(line.split(), UNK_TOKEN)
+    #     return torch.tensor(indices, dtype=torch.long, device='cpu')
+
+    def read_tree(self, line):
+        parents = list(map(int, line.split()))
+        trees = dict()
+        root = None
+        for i in range(1, len(parents) + 1):
+            if i - 1 not in trees.keys() and parents[i - 1] != -1:
+                idx = i
+                prev = None
+                while True:
+                    parent = parents[idx - 1]
+                    if parent == -1:
+                        break
+                    tree = Tree()
+                    if prev is not None:
+                        tree.add_child(prev)
+                    trees[idx - 1] = tree
+                    tree.idx = idx - 1
+                    if parent - 1 in trees.keys():
+                        trees[parent - 1].add_child(tree)
+                        break
+                    elif parent == 0:
+                        root = tree
+                        break
+                    else:
+                        prev = tree
+                        idx = parent
+        return root
 
     def context2ids(self, tokens, word2idx):
         ids = list()
@@ -805,9 +859,20 @@ def make_tags(examples):
 
         tag_list.append(tags)
         tok_list.append(c_tokens)
-        question_list.append(" ".join(q_tokens))
+        question = " ".join(q_tokens)
+        question_list.append(question)
 
-    return tag_list, tok_list, question_list
+        doc = nlp(question)
+        dep = doc.sentences[0].dependencies
+        toks = [d[2].text for d in dep]
+        parents = [d[0].id for d in dep]
+        rels = [d[1] for d in dep]
+        dep_info = {"sentence": question,
+                  "toks": toks,
+                  "parents": parents,
+                  "rels": rels, }
+
+    return tag_list, tok_list, question_list, dep_info
 
 
 def split_dev(input_file, dev_file, test_file):
