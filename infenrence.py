@@ -37,9 +37,9 @@ class BeamSearcher(object):
 
         self.output_dir = output_dir
         #self.test_data = open(config.test_trg_file, "r").readlines()
-        self.data_loader = get_loader(config.dev_src_file,
+        self.data_loader = get_loader(config.train_src_file,
                                       # config.dev_tag_file,
-                                      config.dev_tree_file,
+                                      config.train_tree_file,
                                       word2idx,
                                       config.vocab_file,
                                       use_tag=config.use_tag,
@@ -48,7 +48,7 @@ class BeamSearcher(object):
                                       debug=config.debug,
                                       num=100)
 
-        _, _, self.test_data = pickle.load(open(config.dev_src_file, 'rb'))
+        _, _, self.test_data = pickle.load(open(config.train_src_file, 'rb'))
 
         self.tok2idx = word2idx
         self.idx2tok = {idx: tok for tok, idx in self.tok2idx.items()}
@@ -121,9 +121,6 @@ class BeamSearcher(object):
         tree_enc_o_double = tree_enc_o_double.expand(enc_outputs[0].size(0), 2 * config.hidden_size)
         tree_output = tree_enc_o_double
         h, c = enc_states
-        #h = torch.zeros(h.size()).todevice(config.device)
-        #c = torch.zeros(c.size()).todevice(config.device)
-        #enc_outputs = torch.zeros(enc_outputs.size()).todevice(config.device)
         tree_enc_states = (tree_enc_h.unsqueeze(0), tree_enc_c.unsqueeze(0))
         # encode_states = (enc_h, enc_c)
 

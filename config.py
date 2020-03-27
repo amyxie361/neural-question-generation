@@ -19,19 +19,19 @@ vocab_file = "../data/vocab.txt"
 dev_tree_file = "../data/squad_dev_dependency_parse.txt"
 
 model_path = "./save/"
-exp_name = "debug_align_embedding_20k_10_lr0.1"
-model_path = "./save/" + exp_name + "/train_326110500/3_4.85"
+exp_name = "nofreeze_embed_5k_10_nosparsity"
+model_path = "./save/" + exp_name + "/train_326163908/9_4.9"
 train = False
 test = True
-device = "cuda:2"
+device = "cuda:7"
 use_gpu = True
 debug = True
-debug_num = 20000
+debug_num = 5000
 vocab_size = 45000
-freeze_embedding = True
+freeze_embedding = False
 sparsity = False
 
-num_epochs = 10 
+num_epochs = 10
 max_seq_len = 400
 num_layers = 2
 hidden_size = 300

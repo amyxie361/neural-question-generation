@@ -75,7 +75,7 @@ class TreeEncoder(nn.Module):
     def __init__(self, embeddings,vocab_size, embedding_size, in_dim, mem_dim):
         super(TreeEncoder, self).__init__()
 
-        self.emb = nn.Embedding(config.vocab_size, config.hidden_size,
+        self.embedding = nn.Embedding(config.vocab_size, config.hidden_size,
                                 padding_idx=PAD_ID, sparse=config.sparsity)
 
         if embeddings is not None:
@@ -108,19 +108,19 @@ class TreeEncoder(nn.Module):
         return o, c, h
 
     def forward(self, tree, inputs):
-        embed = self.emb(inputs)[0]
+        embedding = self.embedding(inputs)[0]
         for idx in range(tree.num_children):
             self.forward(tree.children[idx], inputs)
 
         if tree.num_children == 0:
-            child_c = embed[0].detach().new(1, self.mem_dim).fill_(0.).requires_grad_()
+            child_c = embedding[0].detach().new(1, self.mem_dim).fill_(0.).requires_grad_()
             #child_c = torch.zeros([1, self.mem_dim], dtype=torch.long)
-            child_h = embed[0].detach().new(1, self.mem_dim).fill_(0.).requires_grad_()
+            child_h = embedding[0].detach().new(1, self.mem_dim).fill_(0.).requires_grad_()
             #child_h = torch.zeros([1, self.mem_dim], dtype=torch.long)
         else:
             child_o, child_c, child_h = zip(*map(lambda x: x.state, tree.children))
             child_c, child_h = torch.cat(child_c, dim=0), torch.cat(child_h, dim=0)
-        tree.state = self.node_forward(embed[tree.idx], child_c, child_h)
+        tree.state = self.node_forward(embedding[tree.idx], child_c, child_h)
         return tree.state
 
 
