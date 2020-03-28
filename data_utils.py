@@ -841,6 +841,7 @@ def make_tags(examples):
     tag_list = []
     tok_list = []
     question_list = []
+    tree_list = []
     for example in tqdm(examples):
         q_tokens = example["ques_tokens"]
         c_tokens = example["context_tokens"]
@@ -851,7 +852,7 @@ def make_tags(examples):
         for idx in range(len(c_tokens)):
             if idx == start:
                 tag = "B_ans"
-            elif idx < end + 1:
+            elif (idx < end + 1) and (idx > start):
                 tag = "I_ans"
             else:
                 tag = "O"
@@ -871,8 +872,9 @@ def make_tags(examples):
                   "toks": toks,
                   "parents": parents,
                   "rels": rels, }
+        tree_list.append(dep_info)
 
-    return tag_list, tok_list, question_list, dep_info
+    return tag_list, tok_list, question_list, tree_list
 
 
 def split_dev(input_file, dev_file, test_file):

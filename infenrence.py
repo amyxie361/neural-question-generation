@@ -48,7 +48,7 @@ class BeamSearcher(object):
                                       debug=config.debug,
                                       num=100)
 
-        _, _, self.test_data = pickle.load(open(config.train_src_file, 'rb'))
+        _, _, self.test_data, _ = pickle.load(open(config.train_src_file, 'rb'))
 
         self.tok2idx = word2idx
         self.idx2tok = {idx: tok for tok, idx in self.tok2idx.items()}
@@ -76,6 +76,7 @@ class BeamSearcher(object):
                 tag_seq = None
             trg_seq = trg_seq.tolist()[0]
             #print(trg_seq)
+            print(trg_seq)
             print(" ".join([self.idx2tok[id_] for id_ in trg_seq]))
             best_question = self.beam_search(src_seq, ext_src_seq, src_len, tag_seq, tree, sent)
             # discard START  token
