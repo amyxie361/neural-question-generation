@@ -27,6 +27,8 @@ UNK_ID = 1
 START_ID = 2
 END_ID = 3
 
+pos_list = json.load(open("/data/yqxie/00_data/squad_v1.1/pos_list.json", "r"))
+
 class SQuadDataset(data.Dataset):
     def __init__(self, src_file, trg_file, tree_file, max_length, word2idx, debug=False): #todo, to form tree input
         self.src = open(src_file, "r").readlines()
@@ -257,7 +259,7 @@ class TreeData(data.Dataset):
         # self.trees = self.read_trees(path + '.parents')
         self.trees = []
 
-        self.read_data(path)
+        #self.read_data(path)
 
         # assert(len(self.sentences) == len(self.trees))
         # self.size = len(self.sentences)
@@ -341,6 +343,7 @@ class SQuadDatasetWithTag(data.Dataset):
         self.sents = []
         self.trees = []
         self.trgs = []
+        self.rels = []
         self.entity2idx = {"O": 0, "B_ans": 1, "I_ans": 2}
         # print("load original file")
         for idx in tqdm(range(len(tags))):
@@ -348,10 +351,11 @@ class SQuadDatasetWithTag(data.Dataset):
             src = [START_TOKEN] + srcs[idx] + [END_TOKEN]
             self.srcs.append(src)
             self.tags.append(tag)
-            sent, tree = self.read_data(tree_info[idx])
+            sent, tree, rel = self.read_data(tree_info[idx])
             self.sents.append(sent)
             self.trgs.append(sent)
             self.trees.append(tree)
+            self.rels.append(rel)
 
         # print("load vocab")
 
@@ -388,13 +392,15 @@ class SQuadDatasetWithTag(data.Dataset):
         tag_seq = self.tags[index]
         tree = self.trees[index]
         sent = self.sents[index]
+        rel = self.rels[index]
 
         tag_seq = torch.Tensor(tag_seq[:self.max_length])
         src_seq, ext_src_seq, oov_lst = self.context2ids(src_seq, self.word2idx)
         sent_, ext_sent = self.question2ids(sent, self.word2idx, oov_lst)
+        rel_seq, _, _ = self.context2ids(rel, self.word2idx)
         tree_ = self.read_tree(tree)
         trg_seq, ext_trg_seq = self.question2ids(trg_seq, self.word2idx, oov_lst)
-        return src_seq, ext_src_seq, trg_seq, ext_trg_seq, oov_lst, tag_seq, tree_, sent_
+        return src_seq, ext_src_seq, trg_seq, ext_trg_seq, oov_lst, tag_seq, tree_, sent_, rel_seq
 
     def __len__(self):
         return self.num_seqs
@@ -406,7 +412,7 @@ class SQuadDatasetWithTag(data.Dataset):
         sentence = " ".join(data["toks"])
         parents = " ".join(data["parents"])
 
-        return sentence, parents
+        return sentence, parents, data["rels"]
             # self.sentences.append(self.read_sentence(sentence))
             # self.trees.append(self.read_tree(parents))
 
@@ -503,7 +509,7 @@ def collate_fn_tag(data):
             return sequences, torch.zeros(len(sequences), 1).long()
 
     data.sort(key=lambda x: len(x[0]), reverse=True)
-    src_seqs, ext_src_seqs, trg_seqs, ext_trg_seqs, oov_lst, tag_seqs, trees, sents = zip(*data)
+    src_seqs, ext_src_seqs, trg_seqs, ext_trg_seqs, oov_lst, tag_seqs, trees, sents, rel_seq = zip(*data)
 
     src_seqs, src_len = merge(src_seqs)
     ext_src_seqs, _ = merge(ext_src_seqs)
@@ -512,10 +518,11 @@ def collate_fn_tag(data):
     tag_seqs, _ = merge(tag_seqs)
     trees, _ = merge(trees, with_length=False)
     sents, _ = merge(sents)
+    rel_seq, _ = merge(rel_seq)
 
     assert src_seqs.size(1) == tag_seqs.size(1), "length of tokens and tags should be equal"
     assert len(trees) == src_seqs.size(0), "length of src and tree should be equal:{}, {}".format(len(trees), src_seqs.size(0))
-    return src_seqs, ext_src_seqs, src_len, trg_seqs, ext_trg_seqs, trg_len, tag_seqs, oov_lst, trees, sents
+    return src_seqs, ext_src_seqs, src_len, trg_seqs, ext_trg_seqs, trg_len, tag_seqs, oov_lst, trees, sents, rel_seq
 
 
 def get_loader(src_file, tree_file, word2idx, vocab_file,
@@ -580,9 +587,12 @@ def make_vocab_from_squad(output_file, counter, max_vocab_size):
     word2idx[UNK_TOKEN] = 1
     word2idx[START_TOKEN] = 2
     word2idx[END_TOKEN] = 3
+    for i in range(4, 4 + len(pos_list)):
+        word2idx[pos_list[i - 4]] = i
+    plus_len = 4 + len(pos_list)
 
-    for idx, (token, freq) in enumerate(sorted_vocab, start=4):
-        if len(word2idx) == max_vocab_size:
+    for idx, (token, freq) in enumerate(sorted_vocab, start=plus_len):
+        if len(word2idx) == max_vocab_size + 4 + len(pos_list):
             break
         word2idx[token] = idx
     with open(output_file, "wb") as f:
@@ -600,8 +610,12 @@ def make_embedding(embedding_file, output_file, word2idx):
         vec = np.array(word_vec[1:], dtype=np.float32)
         word2embedding[word] = vec
     embedding = np.zeros((len(word2idx), 300), dtype=np.float32)
+    # print(len(word2idx))
+    # print(word2idx)
     num_oov = 0
     for word, idx in word2idx.items():
+        if idx >= config.vocab_size:
+            continue
         if word in word2embedding:
             embedding[idx] = word2embedding[word]
         else:

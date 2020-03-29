@@ -124,7 +124,7 @@ class Trainer(object):
 
     def step(self, train_data):
         #if config.use_tag:
-        src_seq, ext_src_seq, src_len, trg_seq, ext_trg_seq, trg_len, tag_seq, _, tree, sent = train_data
+        src_seq, ext_src_seq, src_len, trg_seq, ext_trg_seq, trg_len, tag_seq, _, tree, sent, rel_seq = train_data
         # else:
         #     src_seq, ext_src_seq, src_len, trg_seq, ext_trg_seq, trg_len, tree, _ = train_data
         #     tag_seq = None
@@ -147,6 +147,7 @@ class Trainer(object):
             ext_trg_seq = ext_trg_seq.to(config.device)
             enc_mask = enc_mask.to(config.device)
             sent = sent.to(config.device)
+            rel_seq = rel_seq.to(config.device)
             if config.use_tag:
                 tag_seq = tag_seq.to(config.device)
             else:
@@ -154,7 +155,7 @@ class Trainer(object):
 
         tree = tree[0] # TODO: tree can't be batched
         enc_outputs, enc_states = self.model.utterance_encoder(src_seq, src_len, tag_seq)
-        tree_enc_o, tree_enc_c, tree_enc_h = self.model.tree_encoder(tree, sent) #todo construct tree input
+        tree_enc_o, tree_enc_c, tree_enc_h = self.model.tree_encoder(tree, rel_seq) #todo construct tree input
         #tree_enc_o = torch.zeros(tree_enc_o.size()).to(config.device)
         #tree_enc_c = torch.zeros(tree_enc_c.size()).to(config.device)
         #tree_enc_h = torch.zeros(tree_enc_h.size()).to(config.device)
