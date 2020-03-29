@@ -23,6 +23,9 @@ class Trainer(object):
         with open(config.word2idx_file, "rb") as f:
             word2idx = pickle.load(f)
 
+        self.tok2idx = word2idx
+        self.idx2tok = {idx: tok for tok, idx in self.tok2idx.items()}
+
         # train, dev loader
         print("load train data")
         self.train_loader = get_loader(config.train_src_file,
@@ -31,7 +34,7 @@ class Trainer(object):
                                        word2idx,
                                        config.vocab_file,
                                        use_tag=config.use_tag,
-                                       batch_size=config.batch_size,
+                                       batch_size=1,
                                        debug=config.debug)
         self.dev_loader = get_loader(config.dev_src_file,
                                      # config.dev_tag_file,
@@ -54,7 +57,8 @@ class Trainer(object):
                  + list(self.model.decoder.parameters())
 
         self.lr = config.lr
-        self.optim = optim.SGD(filter(lambda p: p.requires_grad, params), self.lr, momentum=0.8)
+        # self.optim = optim.SGD(filter(lambda p: p.requires_grad, params), self.lr, momentum=0.8)
+        self.optim = optim.SGD(filter(lambda p: p.requires_grad, params), self.lr)
         # self.optim = optim.Adam(params)
         self.criterion = nn.CrossEntropyLoss(ignore_index=0)
 
@@ -74,18 +78,25 @@ class Trainer(object):
         batch_num = len(self.train_loader)
         self.model.train_mode()
         best_loss = 1e10
+        best_train_loss = 1e10
+        batch_loss = 1e9
         for epoch in range(1, config.num_epochs + 1):
             print("epoch {}/{} :".format(epoch, config.num_epochs), end="\r")
             start = time.time()
             # halving the learning rate after epoch 8
-            if epoch >= 8 and epoch % 2 == 0:
-                self.lr *= 0.5
-                state_dict = self.optim.state_dict()
-                for param_group in state_dict["param_groups"]:
-                    param_group["lr"] = self.lr
-                self.optim.load_state_dict(state_dict)
-
+            #if epoch >= config.decay_start and epoch % config.decay_step == 0:
             for batch_idx, train_data in enumerate(self.train_loader, start=1):
+                if batch_idx % 2000 == 0:
+                    if batch_loss >= best_train_loss * 1.05:
+                        self.lr *= config.decay_weight
+                        state_dict = self.optim.state_dict()
+                        for param_group in state_dict["param_groups"]:
+                            param_group["lr"] = self.lr
+                        self.optim.load_state_dict(state_dict)
+                    else:
+                        best_train_loss = batch_loss 
+
+            #for batch_idx, train_data in enumerate(self.train_loader, start=1):
                 batch_loss = self.step(train_data)
 
                 self.optim.zero_grad()
@@ -118,6 +129,13 @@ class Trainer(object):
         #     src_seq, ext_src_seq, src_len, trg_seq, ext_trg_seq, trg_len, tree, _ = train_data
         #     tag_seq = None
         src_len = torch.tensor(src_len, dtype=torch.long)
+        
+        trg_seq = sent
+        #print(" ".join([self.idx2tok[i] for i in src_seq.tolist()[0]]))
+        #print(trg_seq, sent)
+        #print(" ".join([self.idx2tok[i] for i in trg_seq.tolist()[0]]))
+        #print(" ".join([self.idx2tok[i] for i in sent.tolist()[0]]))
+
         #enc_mask = torch.cat((torch.ones([1, 1]).bool(), (src_seq == 0).bool()), axis=1)
         enc_mask = (src_seq == 0).bool()
 

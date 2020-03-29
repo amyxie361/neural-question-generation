@@ -271,10 +271,10 @@ class TreeData(data.Dataset):
         sent = deepcopy(self.sentences[index])
         return tree, sent
 
-    def read_data(self, filename):
-        f = open(filename)
+    def read_data(self, data):
+        #f = open(filename)
         for line in tqdm(f):
-            data = json.loads(line)
+            #data = json.loads(line)
             sentence = " ".join(data["toks"])
             parents = " ".join(data["parents"])
             self.sentences.append(self.read_sentence(sentence))
@@ -332,14 +332,15 @@ class TreeData(data.Dataset):
 
 class SQuadDatasetWithTag(data.Dataset):
     def __init__(self, src_file, tree_file, max_length, word2idx, vocab_file, debug=False, num=config.debug_num):
-        tags, srcs, self.trgs, tree_info = pickle.load(open(src_file, 'rb'))
-        print(self.trgs[0])
+        tags, srcs, _, tree_info = pickle.load(open(src_file, 'rb'))
+        #print(self.trgs[0])
 
         # lines = open(src_file, "r").readlines()
         self.srcs = []
         self.tags = []
         self.sents = []
         self.trees = []
+        self.trgs = []
         self.entity2idx = {"O": 0, "B_ans": 1, "I_ans": 2}
         # print("load original file")
         for idx in tqdm(range(len(tags))):
@@ -347,8 +348,9 @@ class SQuadDatasetWithTag(data.Dataset):
             src = [START_TOKEN] + srcs[idx] + [END_TOKEN]
             self.srcs.append(src)
             self.tags.append(tag)
-            sent, tree = self.read_data(tree_info)
+            sent, tree = self.read_data(tree_info[idx])
             self.sents.append(sent)
+            self.trgs.append(sent)
             self.trees.append(tree)
 
         # print("load vocab")
