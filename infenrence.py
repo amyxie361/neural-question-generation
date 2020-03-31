@@ -37,9 +37,9 @@ class BeamSearcher(object):
 
         self.output_dir = output_dir
         #self.test_data = open(config.test_trg_file, "r").readlines()
-        self.data_loader = get_loader(config.train_src_file,
+        self.data_loader = get_loader(config.dev_src_file,
                                       # config.dev_tag_file,
-                                      config.train_tree_file,
+                                      config.dev_tree_file,
                                       word2idx,
                                       config.vocab_file,
                                       use_tag=config.use_tag,
