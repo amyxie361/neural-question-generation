@@ -19,19 +19,19 @@ vocab_file = "../data/vocab.txt"
 dev_tree_file = "../data/squad_dev_dependency_parse.txt"
 
 model_path = "./save/"
-exp_name = "new_data2_80k_noFreeze"
+exp_name = "no_tree_noFreeze"
 model_path = "./save/" + exp_name + "/train_328151914/9_2.35"
-train = False
-test = True
-device = "cuda:1"
+train = True
+test = False
+device = "cuda:0"
 use_gpu = True
-debug = True
+debug = False
 debug_num = 100
 vocab_size = 45000
 freeze_embedding = False
 sparsity = False
 
-num_epochs = 20
+num_epochs = 5
 max_seq_len = 400
 num_layers = 2
 hidden_size = 300

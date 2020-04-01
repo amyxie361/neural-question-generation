@@ -135,7 +135,7 @@ class Decoder(nn.Module):
 
         if num_layers == 1:
             dropout = 0.0
-        self.encoder_trans = nn.Linear(2 * hidden_size, hidden_size)
+        self.encoder_trans = nn.Linear(hidden_size, hidden_size)
         self.reduce_layer = nn.Linear(embedding_size + hidden_size, embedding_size)
         self.lstm = nn.LSTM(embedding_size, hidden_size, batch_first=True,
                             num_layers=num_layers, bidirectional=False, dropout=dropout)
@@ -152,11 +152,10 @@ class Decoder(nn.Module):
 
         return context_vector, energy
 
-    def get_encoder_features(self, encoder_outputs, tree_output):
-        encoder_outputs = torch.cat([tree_output, encoder_outputs[0]], dim=-1).unsqueeze(0)
+    def get_encoder_features(self, encoder_outputs):
         return self.encoder_trans(encoder_outputs)
 
-    def forward(self, trg_seq, ext_src_seq, init_states, tree_output, tree_enc_states,  encoder_outputs, encoder_mask):
+    def forward(self, trg_seq, ext_src_seq, init_states, encoder_outputs, encoder_mask):
         # trg_seq : [b,t]
         # init_states : [2,b,d]
         # encoder_outputs : [b,t,d]
@@ -164,7 +163,7 @@ class Decoder(nn.Module):
 
         batch_size, max_len = trg_seq.size()
         hidden_size = encoder_outputs.size(-1)
-        memories = self.get_encoder_features(encoder_outputs, tree_output)
+        memories = self.get_encoder_features(encoder_outputs)
         # print(tree_output.size(), encoder_outputs[0].size(), memories.size())
         logits = []
         prev_states = init_states
@@ -200,13 +199,12 @@ class Decoder(nn.Module):
 
         return logits
 
-    def decode(self, y, ext_x, prev_states, prev_context, encoder_features, encoder_mask, tree_enc_states):
+    def decode(self, y, ext_x, prev_states, prev_context, encoder_features, encoder_mask):
         # forward one step lstm
         # y : [b]
 
         embedded = self.embedding(y.unsqueeze(1))
         lstm_inputs = self.reduce_layer(torch.cat([embedded, prev_context], dim=2))
-        # lstm_inputs = self.reduce_layer(torch.cat([embedded, prev_context], dim=2))
         output, states = self.lstm(lstm_inputs, prev_states)
         context, energy = self.attention(output, encoder_features, encoder_mask)
         concat_input = torch.cat((output, context), dim=2).squeeze(dim=1)
@@ -274,8 +272,6 @@ class SeqTree2seq(nn.Module):
                           config.num_layers,
                           config.dropout)
 
-        tree_encoder = TreeEncoder(embedding, config.vocab_size, config.embedding_size, config.hidden_size, config.hidden_size) ## todo: check tree dimension
-
         decoder = Decoder(embedding, config.vocab_size, #todo: check decoder dimension
                           config.embedding_size, 2 * config.hidden_size,
                           config.num_layers,
@@ -284,11 +280,9 @@ class SeqTree2seq(nn.Module):
         if config.use_gpu and torch.cuda.is_available():
             device = torch.device(config.device)
             utterance_encoder = utterance_encoder.to(device)
-            tree_encoder = tree_encoder.to(device)
             decoder = decoder.to(device)
 
         self.utterance_encoder = utterance_encoder
-        self.tree_encoder = tree_encoder
         self.decoder = decoder
 
         if is_eval:
@@ -297,15 +291,12 @@ class SeqTree2seq(nn.Module):
         if model_path is not None:
             ckpt = torch.load(model_path)
             self.utterance_encoder.load_state_dict(ckpt["utterance_encoder_state_dict"])
-            self.tree_encoder.load_state_dict(ckpt["tree_encoder_state_dict"])
             self.decoder.load_state_dict(ckpt["decoder_state_dict"])
 
     def eval_mode(self):
         self.utterance_encoder = self.utterance_encoder.eval()
-        self.tree_encoder = self.tree_encoder.eval()
         self.decoder = self.decoder.eval()
 
     def train_mode(self):
         self.utterance_encoder = self.utterance_encoder.train()
-        self.tree_encoder = self.tree_encoder.train()
         self.decoder = self.decoder.train()

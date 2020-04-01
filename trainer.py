@@ -26,7 +26,6 @@ class Trainer(object):
         self.tok2idx = word2idx
         self.idx2tok = {idx: tok for tok, idx in self.tok2idx.items()}
 
-        # train, dev loader
         print("load train data")
         self.train_loader = get_loader(config.train_src_file,
                                        # config.train_tag_file,
@@ -53,7 +52,6 @@ class Trainer(object):
 
         self.model = SeqTree2seq(embedding, model_path=model_path)
         params = list(self.model.utterance_encoder.parameters()) \
-                 + list(self.model.tree_encoder.parameters()) \
                  + list(self.model.decoder.parameters())
 
         self.lr = config.lr
@@ -67,7 +65,7 @@ class Trainer(object):
             "epoch": epoch,
             "current_loss": loss,
             "utterance_encoder_state_dict": self.model.utterance_encoder.state_dict(),
-            "tree_encoder_state_dict": self.model.tree_encoder.state_dict(),
+            # "tree_encoder_state_dict": self.model.tree_encoder.state_dict(),
             "decoder_state_dict": self.model.decoder.state_dict()
         }
         loss = round(loss, 2)
@@ -103,7 +101,7 @@ class Trainer(object):
                 batch_loss.backward()
                 # gradient clipping
                 nn.utils.clip_grad_norm_(self.model.utterance_encoder.parameters(), config.max_grad_norm)
-                nn.utils.clip_grad_norm_(self.model.tree_encoder.parameters(), config.max_grad_norm)
+                # nn.utils.clip_grad_norm_(self.model.tree_encoder.parameters(), config.max_grad_norm)
                 nn.utils.clip_grad_norm_(self.model.decoder.parameters(), config.max_grad_norm)
                 self.optim.step()
                 batch_loss = batch_loss.detach().item()
@@ -124,19 +122,9 @@ class Trainer(object):
 
     def step(self, train_data):
         #if config.use_tag:
-        src_seq, ext_src_seq, src_len, trg_seq, ext_trg_seq, trg_len, tag_seq, _, tree, sent = train_data
-        # else:
-        #     src_seq, ext_src_seq, src_len, trg_seq, ext_trg_seq, trg_len, tree, _ = train_data
-        #     tag_seq = None
+        src_seq, ext_src_seq, src_len, trg_seq, ext_trg_seq, trg_len, tag_seq, _ , _, _= train_data
         src_len = torch.tensor(src_len, dtype=torch.long)
-        
-        trg_seq = sent
-        #print(" ".join([self.idx2tok[i] for i in src_seq.tolist()[0]]))
-        #print(trg_seq, sent)
-        #print(" ".join([self.idx2tok[i] for i in trg_seq.tolist()[0]]))
-        #print(" ".join([self.idx2tok[i] for i in sent.tolist()[0]]))
 
-        #enc_mask = torch.cat((torch.ones([1, 1]).bool(), (src_seq == 0).bool()), axis=1)
         enc_mask = (src_seq == 0).bool()
 
         if config.use_gpu:
@@ -146,27 +134,13 @@ class Trainer(object):
             trg_seq = trg_seq.to(config.device)
             ext_trg_seq = ext_trg_seq.to(config.device)
             enc_mask = enc_mask.to(config.device)
-            sent = sent.to(config.device)
             if config.use_tag:
                 tag_seq = tag_seq.to(config.device)
             else:
                 tag_seq = None
 
-        tree = tree[0] # TODO: tree can't be batched
         enc_outputs, enc_states = self.model.utterance_encoder(src_seq, src_len, tag_seq)
-        tree_enc_o, tree_enc_c, tree_enc_h = self.model.tree_encoder(tree, sent) #todo construct tree input
-        #tree_enc_o = torch.zeros(tree_enc_o.size()).to(config.device)
-        #tree_enc_c = torch.zeros(tree_enc_c.size()).to(config.device)
-        #tree_enc_h = torch.zeros(tree_enc_h.size()).to(config.device)
-        tree_enc_o_double = torch.cat((tree_enc_o[0], tree_enc_o[0])).unsqueeze(0)
-        tree_enc_o_double = tree_enc_o_double.expand(enc_outputs[0].size(0), 2 * config.hidden_size)
-        tree_output = tree_enc_o_double
         enc_h, enc_c = enc_states
-        tree_enc_states = (tree_enc_h.unsqueeze(0), tree_enc_c.unsqueeze(0))
-        # encode_c: 3x600
-        #enc_h = torch.zeros(enc_h.size()).to(config.device)
-        #enc_c = torch.zeros(enc_c.size()).to(config.device)
-        #enc_outputs = torch.zeros(enc_outputs.size()).to(config.device)
         encode_states = (enc_h, enc_c) # todo: same as above
 
         sos_trg = trg_seq[:, :-1]
@@ -174,7 +148,7 @@ class Trainer(object):
 
         if config.use_pointer:
             eos_trg = ext_trg_seq[:, 1:]
-        logits = self.model.decoder(sos_trg, ext_src_seq, encode_states, tree_output, tree_enc_states, enc_outputs, enc_mask)
+        logits = self.model.decoder(sos_trg, ext_src_seq, encode_states, enc_outputs, enc_mask)
         batch_size, nsteps, _ = logits.size()
         preds = logits.view(batch_size * nsteps, -1)
         targets = eos_trg.contiguous().view(-1)
