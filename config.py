@@ -30,6 +30,7 @@ debug_num = 100
 vocab_size = 45000
 freeze_embedding = False
 sparsity = False
+use_size = 512
 
 num_epochs = 5
 max_seq_len = 400
