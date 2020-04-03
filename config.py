@@ -19,6 +19,7 @@ vocab_file = "../data/vocab.txt"
 dev_tree_file = "../data/squad_dev_dependency_parse.txt"
 
 model_path = "./save/"
+<<<<<<< HEAD
 exp_name = "use_debug"
 model_path = "./save/" + exp_name + "/train_328151914/9_2.35"
 train = True
@@ -26,11 +27,23 @@ test = False
 device = "cuda:0"
 use_gpu = True
 debug = True
+=======
+exp_name = "no_tree_Freeze"
+model_path = "./save/" + exp_name + "/train_401160131/5_2.89"
+train = False
+test = True
+device = "cuda:1"
+use_gpu = True
+debug = False
+>>>>>>> ce391d7354997923268efdffb97876b35d15b49c
 debug_num = 100
 vocab_size = 45000
 freeze_embedding = True
 sparsity = False
+<<<<<<< HEAD
 use_size = 512
+=======
+>>>>>>> ce391d7354997923268efdffb97876b35d15b49c
 
 num_epochs = 5
 max_seq_len = 400
@@ -50,4 +63,8 @@ use_pointer = True
 beam_size = 3
 min_decode_step = 5
 max_decode_step = 20
+<<<<<<< HEAD
 output_dir = "./result/" + exp_name + "_train"
+=======
+output_dir = "./result/" + exp_name
+>>>>>>> ce391d7354997923268efdffb97876b35d15b49c
