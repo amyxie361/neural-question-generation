@@ -67,7 +67,7 @@ class BeamSearcher(object):
         golden_fw = open(self.golden_dir, "w")
         for i, eval_data in enumerate(self.data_loader):
             if config.use_tag:
-                src_seq, ext_src_seq, src_len, trg_seq, ext_trg_seq, trg_len, tag_seq, oov_lst, tree, sent = eval_data
+                src_seq, ext_src_seq, src_len, trg_seq, ext_trg_seq, trg_len, tag_seq, oov_lst, _, sent = eval_data
                 #src_seq, ext_src_seq, src_len, trg_seq, \
                 #ext_trg_seq, trg_len, tag_seq, oov_lst = eval_data
             else:
@@ -78,7 +78,7 @@ class BeamSearcher(object):
             #print(trg_seq)
             print(trg_seq)
             print(" ".join([self.idx2tok[id_] for id_ in trg_seq]))
-            best_question = self.beam_search(src_seq, ext_src_seq, src_len, tag_seq, tree, sent)
+            best_question = self.beam_search(src_seq, ext_src_seq, src_len, tag_seq)
             # discard START  token
             output_indices = [int(idx) for idx in best_question.tokens[1:-1]]
             decoded_words = outputids2words(output_indices, self.idx2tok, oov_lst[0])
@@ -98,7 +98,7 @@ class BeamSearcher(object):
         pred_fw.close()
         golden_fw.close()
 
-    def beam_search(self, src_seq, ext_src_seq, src_len, tag_seq, tree, sent):
+    def beam_search(self, src_seq, ext_src_seq, src_len, tag_seq):
         zeros = torch.zeros_like(src_seq)
         enc_mask = torch.BoolTensor(src_seq == zeros)
         src_len = torch.LongTensor(src_len)
@@ -110,22 +110,13 @@ class BeamSearcher(object):
             src_len = src_len.to(config.device)
             enc_mask = enc_mask.to(config.device)
             prev_context = prev_context.to(config.device)
-            sent = sent.to(config.device)
             if config.use_tag:
                 tag_seq = tag_seq.to(config.device)
 
         # forward encoder
-        tree = tree[0]
         enc_outputs, enc_states = self.model.utterance_encoder(src_seq, src_len, tag_seq)
-        tree_enc_o, tree_enc_c, tree_enc_h = self.model.tree_encoder(tree, sent)
-        tree_enc_o_double = torch.cat((tree_enc_o[0], tree_enc_o[0])).unsqueeze(0)
-        tree_enc_o_double = tree_enc_o_double.expand(enc_outputs[0].size(0), 2 * config.hidden_size)
-        tree_output = tree_enc_o_double
         h, c = enc_states
-        tree_enc_states = (tree_enc_h.unsqueeze(0), tree_enc_c.unsqueeze(0))
-        # encode_states = (enc_h, enc_c)
 
-        # h, c = enc_states  # [2, b, d] but b = 1
         hypotheses = [Hypothesis(tokens=[self.tok2idx[START_TOKEN]],
                                  log_probs=[0.0],
                                  state=(h[:, 0, :], c[:, 0, :]),
@@ -134,7 +125,7 @@ class BeamSearcher(object):
         ext_src_seq = ext_src_seq.repeat(config.beam_size, 1)
         enc_outputs = enc_outputs.repeat(config.beam_size, 1, 1)
 
-        enc_features = self.model.decoder.get_encoder_features(enc_outputs, tree_output)
+        enc_features = self.model.decoder.get_encoder_features(enc_outputs)
         enc_mask = enc_mask.repeat(config.beam_size, 1)
         num_steps = 0
         results = []
@@ -163,7 +154,7 @@ class BeamSearcher(object):
             # [beam_size, |V|]
             logits, states, context_vector = self.model.decoder.decode(prev_y, ext_src_seq,
                                                                        prev_states, prev_context,
-                                                                       enc_features, enc_mask, tree_enc_states)
+                                                                       enc_features, enc_mask)
             h_state, c_state = states
             log_probs = F.log_softmax(logits, dim=1)
             top_k_log_probs, top_k_ids \

@@ -145,7 +145,6 @@ class Trainer(object):
 
         sos_trg = trg_seq[:, :-1]
         eos_trg = trg_seq[:, 1:]
-
         if config.use_pointer:
             eos_trg = ext_trg_seq[:, 1:]
         logits = self.model.decoder(sos_trg, ext_src_seq, encode_states, enc_outputs, enc_mask)
