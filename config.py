@@ -18,16 +18,16 @@ train_tree_file = "../data/squad_train_dependency_parse.txt"
 vocab_file = "../data/vocab.txt"
 dev_tree_file = "../data/squad_dev_dependency_parse.txt"
 
-exp_name = "use_debug"
+exp_name = "use_noFreeze"
 model_path = "./save/" + exp_name + "/train_403144016/1_6.08"
-train = False
-test = True
-device = "cuda:0"
+train = True
+test = False
+device = "cuda:1"
 use_gpu = True
-debug = True
+debug = False
 debug_num = 100
 vocab_size = 45000
-freeze_embedding = True
+freeze_embedding = False
 sparsity = False
 use_size = 512
 
