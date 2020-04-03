@@ -153,6 +153,7 @@ class Decoder(nn.Module):
         return context_vector, energy
 
     def get_encoder_features(self, encoder_outputs, use_vec):
+        print(use_vec.size(), encoder_outputs[0].size())
         encoder_outputs = torch.cat([use_vec, encoder_outputs[0]], dim=-1).unsqueeze(0)
         return self.encoder_trans(encoder_outputs)
 

@@ -14,7 +14,7 @@ import config
 from data_utils import get_loader, eta, user_friendly_time, progress_bar, time_since
 from model import SeqTree2seq
 
-embed = hub.load("https://https://tfhub.dev/google/universal-sentence-encoder/4")
+embed = hub.load("https://tfhub.dev/google/universal-sentence-encoder/4")
 
 class Trainer(object):
     def __init__(self, model_path=None):
@@ -128,8 +128,8 @@ class Trainer(object):
         src_seq, ext_src_seq, src_len, trg_seq, ext_trg_seq, trg_len, tag_seq, _ , _, sent= train_data
         src_len = torch.tensor(src_len, dtype=torch.long)
 
-        use_vec = embed([" ".join([self.idx2tok[i] for i in sent])])
-
+        use_vec = embed([" ".join([self.idx2tok[i] for i in sent.tolist()[0]])]).numpy()
+        use_vec = torch.from_numpy(use_vec).float().to(config.device)
         enc_mask = (src_seq == 0).bool()
 
         if config.use_gpu:
