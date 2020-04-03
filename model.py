@@ -135,7 +135,9 @@ class Decoder(nn.Module):
 
         if num_layers == 1:
             dropout = 0.0
-        self.encoder_trans = nn.Linear(2 * hidden_size, hidden_size)
+        self.encoder_trans = nn.Linear(hidden_size, hidden_size)
+        self.init_trans_h = nn.Linear(int(1.5 * hidden_size), hidden_size)
+        self.init_trans_c = nn.Linear(int(1.5 * hidden_size), hidden_size)
         self.reduce_layer = nn.Linear(embedding_size + hidden_size, embedding_size)
         self.lstm = nn.LSTM(embedding_size, hidden_size, batch_first=True,
                             num_layers=num_layers, bidirectional=False, dropout=dropout)
@@ -152,11 +154,14 @@ class Decoder(nn.Module):
 
         return context_vector, energy
 
-    def get_encoder_features(self, encoder_outputs, tree_output):
-        encoder_outputs = torch.cat([tree_output, encoder_outputs[0]], dim=-1).unsqueeze(0)
+    def get_encoder_features(self, encoder_outputs):
         return self.encoder_trans(encoder_outputs)
 
-    def forward(self, trg_seq, ext_src_seq, init_states, tree_output, tree_enc_states,  encoder_outputs, encoder_mask):
+    def form_init(self, init_state):
+        init_h, init_c = init_state
+        return self.init_trans_h(init_h), self.init_trans_c(init_c)
+
+    def forward(self, trg_seq, ext_src_seq, init_states, encoder_outputs, encoder_mask):
         # trg_seq : [b,t]
         # init_states : [2,b,d]
         # encoder_outputs : [b,t,d]
@@ -164,10 +169,10 @@ class Decoder(nn.Module):
 
         batch_size, max_len = trg_seq.size()
         hidden_size = encoder_outputs.size(-1)
-        memories = self.get_encoder_features(encoder_outputs, tree_output)
+        memories = self.get_encoder_features(encoder_outputs)
         # print(tree_output.size(), encoder_outputs[0].size(), memories.size())
         logits = []
-        prev_states = init_states
+        prev_states = self.form_init(init_states)
         prev_context = torch.zeros((batch_size, 1, hidden_size), device=config.device)
         for i in range(max_len):
             y_i = trg_seq[:, i].unsqueeze(1)  # [b, 1]
@@ -200,7 +205,7 @@ class Decoder(nn.Module):
 
         return logits
 
-    def decode(self, y, ext_x, prev_states, prev_context, encoder_features, encoder_mask, tree_enc_states):
+    def decode(self, y, ext_x, prev_states, prev_context, encoder_features, encoder_mask):
         # forward one step lstm
         # y : [b]
 

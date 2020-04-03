@@ -129,14 +129,7 @@ class Trainer(object):
         #     src_seq, ext_src_seq, src_len, trg_seq, ext_trg_seq, trg_len, tree, _ = train_data
         #     tag_seq = None
         src_len = torch.tensor(src_len, dtype=torch.long)
-        
         trg_seq = sent
-        #print(" ".join([self.idx2tok[i] for i in src_seq.tolist()[0]]))
-        #print(trg_seq, sent)
-        #print(" ".join([self.idx2tok[i] for i in trg_seq.tolist()[0]]))
-        #print(" ".join([self.idx2tok[i] for i in sent.tolist()[0]]))
-
-        #enc_mask = torch.cat((torch.ones([1, 1]).bool(), (src_seq == 0).bool()), axis=1)
         enc_mask = (src_seq == 0).bool()
 
         if config.use_gpu:
@@ -155,14 +148,15 @@ class Trainer(object):
         tree = tree[0] # TODO: tree can't be batched
         enc_outputs, enc_states = self.model.utterance_encoder(src_seq, src_len, tag_seq)
         tree_enc_o, tree_enc_c, tree_enc_h = self.model.tree_encoder(tree, sent) #todo construct tree input
-        #tree_enc_o = torch.zeros(tree_enc_o.size()).to(config.device)
-        #tree_enc_c = torch.zeros(tree_enc_c.size()).to(config.device)
-        #tree_enc_h = torch.zeros(tree_enc_h.size()).to(config.device)
-        tree_enc_o_double = torch.cat((tree_enc_o[0], tree_enc_o[0])).unsqueeze(0)
-        tree_enc_o_double = tree_enc_o_double.expand(enc_outputs[0].size(0), 2 * config.hidden_size)
-        tree_output = tree_enc_o_double
+        tree_enc_c_double = torch.cat((tree_enc_c, tree_enc_c), axis=0).unsqueeze(1)
+        tree_enc_h_double = torch.cat((tree_enc_h, tree_enc_h), axis=0).unsqueeze(1)
+        #tree_enc_o_double = torch.cat((tree_enc_o[0], tree_enc_o[0])).unsqueeze(0)
+        #tree_enc_o_double = tree_enc_o_double.expand(enc_outputs[0].size(0), 2 * config.hidden_size)
+        #tree_output = tree_enc_o_double
         enc_h, enc_c = enc_states
-        tree_enc_states = (tree_enc_h.unsqueeze(0), tree_enc_c.unsqueeze(0))
+        enc_h = torch.cat([tree_enc_h_double, enc_h], axis=-1)
+        enc_c = torch.cat([tree_enc_c_double, enc_c], axis=-1)
+        #tree_enc_states = (tree_enc_h.unsqueeze(0), tree_enc_c.unsqueeze(0))
         # encode_c: 3x600
         #enc_h = torch.zeros(enc_h.size()).to(config.device)
         #enc_c = torch.zeros(enc_c.size()).to(config.device)
@@ -174,7 +168,7 @@ class Trainer(object):
 
         if config.use_pointer:
             eos_trg = ext_trg_seq[:, 1:]
-        logits = self.model.decoder(sos_trg, ext_src_seq, encode_states, tree_output, tree_enc_states, enc_outputs, enc_mask)
+        logits = self.model.decoder(sos_trg, ext_src_seq, encode_states, enc_outputs, enc_mask)
         batch_size, nsteps, _ = logits.size()
         preds = logits.view(batch_size * nsteps, -1)
         targets = eos_trg.contiguous().view(-1)
