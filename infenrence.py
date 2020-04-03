@@ -6,6 +6,9 @@ import torch.nn.functional as F
 import config
 import pickle
 
+import tensorflow as tf
+import tensorflow_hub as hub
+embed = hub.load("https://tfhub.dev/google/universal-sentence-encoder/4")
 
 class Hypothesis(object):
     def __init__(self, tokens, log_probs, state, context=None):
@@ -103,15 +106,15 @@ class BeamSearcher(object):
         enc_mask = torch.BoolTensor(src_seq == zeros)
         src_len = torch.LongTensor(src_len)
         prev_context = torch.zeros(1, 1, 2 * config.hidden_size)
-        use_vec = embed([" ".join([self.idx2tok[i] for i in sent])])
-
+        use_vec = embed([" ".join([self.idx2tok[i] for i in sent.tolist()[0]])]).numpy()
+        
         if config.use_gpu:
             src_seq = src_seq.to(config.device)
             ext_src_seq = ext_src_seq.to(config.device)
             src_len = src_len.to(config.device)
             enc_mask = enc_mask.to(config.device)
             prev_context = prev_context.to(config.device)
-            use_vec = use_vec.to(config.device)
+            use_vec = torch.from_numpy(use_vec).float().to(config.device)
             if config.use_tag:
                 tag_seq = tag_seq.to(config.device)
 
@@ -119,6 +122,9 @@ class BeamSearcher(object):
         # forward encoder
         enc_outputs, enc_states = self.model.utterance_encoder(src_seq, src_len, tag_seq)
         h, c = enc_states
+        use_doubled = torch.cat([use_vec, use_vec], axis=0).unsqueeze(1)
+        h = self.model.decoder.init_trans_h(torch.cat([use_doubled, h], axis=-1))
+        c = self.model.decoder.init_trans_c(torch.cat([use_doubled, c], axis=-1))
         hypotheses = [Hypothesis(tokens=[self.tok2idx[START_TOKEN]],
                                  log_probs=[0.0],
                                  state=(h[:, 0, :], c[:, 0, :]),
@@ -127,7 +133,7 @@ class BeamSearcher(object):
         ext_src_seq = ext_src_seq.repeat(config.beam_size, 1)
         enc_outputs = enc_outputs.repeat(config.beam_size, 1, 1)
 
-        enc_features = self.model.decoder.get_encoder_features(enc_outputs, use_vec)
+        enc_features = self.model.decoder.get_encoder_features(enc_outputs)
         enc_mask = enc_mask.repeat(config.beam_size, 1)
         num_steps = 0
         results = []

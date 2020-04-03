@@ -19,9 +19,9 @@ vocab_file = "../data/vocab.txt"
 dev_tree_file = "../data/squad_dev_dependency_parse.txt"
 
 exp_name = "use_debug"
-model_path = "./save/" + exp_name + "/train_328151914/9_2.35"
-train = True
-test = False
+model_path = "./save/" + exp_name + "/train_403144016/1_6.08"
+train = False
+test = True
 device = "cuda:0"
 use_gpu = True
 debug = True

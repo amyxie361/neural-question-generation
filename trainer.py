@@ -129,6 +129,7 @@ class Trainer(object):
         src_len = torch.tensor(src_len, dtype=torch.long)
 
         use_vec = embed([" ".join([self.idx2tok[i] for i in sent.tolist()[0]])]).numpy()
+        # batch x 512
         use_vec = torch.from_numpy(use_vec).float().to(config.device)
         enc_mask = (src_seq == 0).bool()
 
@@ -146,14 +147,19 @@ class Trainer(object):
 
         enc_outputs, enc_states = self.model.utterance_encoder(src_seq, src_len, tag_seq)
         enc_h, enc_c = enc_states
-        encode_states = (enc_h, enc_c) # todo: same as above
+#        encode_states = (enc_h, enc_c)
+
+        use_doubled = torch.cat([use_vec, use_vec], axis=0).unsqueeze(1)
+        enc_h = torch.cat([use_doubled, enc_h], axis=-1)
+        enc_c = torch.cat([use_doubled, enc_c], axis=-1)
+        encode_states = (enc_h, enc_c)
 
         sos_trg = trg_seq[:, :-1]
         eos_trg = trg_seq[:, 1:]
 
         if config.use_pointer:
             eos_trg = ext_trg_seq[:, 1:]
-        logits = self.model.decoder(sos_trg, ext_src_seq, encode_states, enc_outputs, enc_mask, use_vec)
+        logits = self.model.decoder(sos_trg, ext_src_seq, encode_states, enc_outputs, enc_mask)
         batch_size, nsteps, _ = logits.size()
         preds = logits.view(batch_size * nsteps, -1)
         targets = eos_trg.contiguous().view(-1)
