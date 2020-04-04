@@ -19,11 +19,11 @@ vocab_file = "../data/vocab.txt"
 dev_tree_file = "../data/squad_dev_dependency_parse.txt"
 
 model_path = "./save/"
-exp_name = "no_tree_Freeze"
-model_path = "./save/" + exp_name + "/train_401160131/5_2.89"
+exp_name = "no_tree_noFreeze"
+model_path = "./save/" + exp_name + "/train_401160236/5_2.88"
 train = False
 test = True
-device = "cuda:1"
+device = "cuda:6"
 use_gpu = True
 debug = False
 debug_num = 100
