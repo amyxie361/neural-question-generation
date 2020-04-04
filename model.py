@@ -137,8 +137,8 @@ class Decoder(nn.Module):
             dropout = 0.0
         self.encoder_trans = nn.Linear(hidden_size, hidden_size)
         self.reduce_layer = nn.Linear(embedding_size + hidden_size, embedding_size)
-        self.init_trans_h = nn.Linear(config.use_size + hidden_size, hidden_size)
-        self.init_trans_c = nn.Linear(config.use_size + hidden_size, hidden_size)
+        self.init_trans_h = nn.Linear(config.use_size, hidden_size)
+        self.init_trans_c = nn.Linear(config.use_size, hidden_size)
         self.lstm = nn.LSTM(embedding_size, hidden_size, batch_first=True,
                             num_layers=num_layers, bidirectional=False, dropout=dropout)
         self.concat_layer = nn.Linear(2 * hidden_size, hidden_size)
@@ -161,28 +161,30 @@ class Decoder(nn.Module):
         init_h, init_c = init_states 
         return self.init_trans_h(init_h), self.init_trans_c(init_c)
 
-    def forward(self, trg_seq, ext_src_seq, init_states, encoder_outputs, encoder_mask):
+    def forward(self, trg_seq, ext_src_seq, init_states, encoder_mask):
         # trg_seq : [b,t]
         # init_states : [2,b,d]
         # encoder_outputs : [b,t,d]
         # init_states : a tuple of [2, b, d]
 
         batch_size, max_len = trg_seq.size()
-        hidden_size = encoder_outputs.size(-1)
-        memories = self.get_encoder_features(encoder_outputs)
+        hidden_size = config.hidden_size * 2
+        # memories = self.get_encoder_features(encoder_outputs)
         # print(tree_output.size(), encoder_outputs[0].size(), memories.size())
         logits = []
         prev_states = self.form_init(init_states)
-        prev_context = torch.zeros((batch_size, 1, hidden_size), device=config.device)
+        #prev_context = torch.zeros((batch_size, 1, hidden_size), device=config.device)
         for i in range(max_len):
             y_i = trg_seq[:, i].unsqueeze(1)  # [b, 1]
             embedded = self.embedding(y_i)  # [b, 1, d]
-            lstm_inputs = self.reduce_layer(torch.cat([embedded, prev_context], dim=2))
+            #lstm_inputs = self.reduce_layer(torch.cat([embedded, prev_context], dim=2))
+            lstm_inputs = embedded
             output, states = self.lstm(lstm_inputs, prev_states)
             # encoder-decoder attention
-            context, energy = self.attention(output, memories, encoder_mask)
-            concat_input = torch.cat((output, context), dim=2).squeeze(dim=1)
-            logit_input = torch.tanh(self.concat_layer(concat_input))
+            #context, energy = self.attention(output, output, encoder_mask)
+            #concat_input = torch.cat((output, context), dim=2).squeeze(dim=1)
+            #logit_input = torch.tanh(self.concat_layer(concat_input))
+            logit_input = torch.tanh(output.squeeze(dim=1))
             logit = self.logit_layer(logit_input)  # [b, |V|]
 
             # maxout pointer network
@@ -190,32 +192,33 @@ class Decoder(nn.Module):
                 num_oov = max(torch.max(ext_src_seq - self.vocab_size + 1), 0)
                 zeros = torch.zeros((batch_size, num_oov), device=config.device)
                 extended_logit = torch.cat([logit, zeros], dim=1)
-                out = torch.zeros_like(extended_logit) - INF
-                out, _ = scatter_max(energy, ext_src_seq, out=out)
-                out = out.masked_fill(out == -INF, 0)
-                logit = extended_logit + out
+                #out = torch.zeros_like(extended_logit) - INF
+                #out, _ = scatter_max(energy, ext_src_seq, out=out)
+                #out = out.masked_fill(out == -INF, 0)
+                #logit = extended_logit + out
+                logit = extended_logit
                 logit = logit.masked_fill(logit == 0, -INF)
 
             logits.append(logit)
             # update prev state and context
             prev_states = states
-            prev_context = context
+            # prev_context = context
 
         logits = torch.stack(logits, dim=1)  # [b, t, |V|]
 
         return logits
 
-    def decode(self, y, ext_x, prev_states, prev_context, encoder_features, encoder_mask):
+    def decode(self, y, ext_x, prev_states, encoder_mask):
         # forward one step lstm
         # y : [b]
 
         embedded = self.embedding(y.unsqueeze(1))
-        lstm_inputs = self.reduce_layer(torch.cat([embedded, prev_context], dim=2))
+        #lstm_inputs = self.reduce_layer(torch.cat([embedded, prev_context], dim=2))
         output, states = self.lstm(lstm_inputs, prev_states)
-        context, energy = self.attention(output, encoder_features, encoder_mask)
-        concat_input = torch.cat((output, context), dim=2).squeeze(dim=1)
-        logit_input = torch.tanh(self.concat_layer(concat_input))
-        logit = self.logit_layer(logit_input)  # [b, |V|]
+        #context, energy = self.attention(output, encoder_features, encoder_mask)
+        #concat_input = torch.cat((output, context), dim=2).squeeze(dim=1)
+        #logit_input = torch.tanh(self.concat_layer(concat_input))
+        logit = self.logit_laye(torch.tanh(output))  # [b, |V|]
 
         if config.use_pointer:
             batch_size = y.size(0)
@@ -273,10 +276,10 @@ class Seq2seq(nn.Module):
 class SeqTree2seq(nn.Module):
     def __init__(self, embedding=None, is_eval=False, model_path=None):
         super(SeqTree2seq, self).__init__()
-        utterance_encoder = Encoder(embedding, config.vocab_size,
-                          config.embedding_size, config.hidden_size,
-                          config.num_layers,
-                          config.dropout)
+        #utterance_encoder = Encoder(embedding, config.vocab_size,
+        #                  config.embedding_size, config.hidden_size,
+        #                  config.num_layers,
+        #                  config.dropout)
 
         decoder = Decoder(embedding, config.vocab_size, #todo: check decoder dimension
                           config.embedding_size, 2 * config.hidden_size,
@@ -285,10 +288,10 @@ class SeqTree2seq(nn.Module):
 
         if config.use_gpu and torch.cuda.is_available():
             device = torch.device(config.device)
-            utterance_encoder = utterance_encoder.to(device)
+            #utterance_encoder = utterance_encoder.to(device)
             decoder = decoder.to(device)
 
-        self.utterance_encoder = utterance_encoder
+        #self.utterance_encoder = utterance_encoder
         self.decoder = decoder
 
         if is_eval:
@@ -296,13 +299,13 @@ class SeqTree2seq(nn.Module):
 
         if model_path is not None:
             ckpt = torch.load(model_path)
-            self.utterance_encoder.load_state_dict(ckpt["utterance_encoder_state_dict"])
+            #self.utterance_encoder.load_state_dict(ckpt["utterance_encoder_state_dict"])
             self.decoder.load_state_dict(ckpt["decoder_state_dict"])
 
     def eval_mode(self):
-        self.utterance_encoder = self.utterance_encoder.eval()
+        #self.utterance_encoder = self.utterance_encoder.eval()
         self.decoder = self.decoder.eval()
 
     def train_mode(self):
-        self.utterance_encoder = self.utterance_encoder.train()
+        #self.utterance_encoder = self.utterance_encoder.train()
         self.decoder = self.decoder.train()

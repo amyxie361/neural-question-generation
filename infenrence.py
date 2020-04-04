@@ -51,7 +51,7 @@ class BeamSearcher(object):
                                       debug=config.debug,
                                       num=100)
 
-        _, _, self.test_data, _ = pickle.load(open(config.train_src_file, 'rb'))
+        _, _, self.test_data, _ = pickle.load(open(config.dev_src_file, 'rb'))
 
         self.tok2idx = word2idx
         self.idx2tok = {idx: tok for tok, idx in self.tok2idx.items()}

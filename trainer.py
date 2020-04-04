@@ -54,8 +54,9 @@ class Trainer(object):
             os.makedirs(self.model_dir)
 
         self.model = SeqTree2seq(embedding, model_path=model_path)
-        params = list(self.model.utterance_encoder.parameters()) \
-                 + list(self.model.decoder.parameters())
+        params =list(self.model.decoder.parameters())
+        #params = list(self.model.utterance_encoder.parameters()) \
+        #         + list(self.model.decoder.parameters())
 
         self.lr = config.lr
         # self.optim = optim.SGD(filter(lambda p: p.requires_grad, params), self.lr, momentum=0.8)
@@ -67,7 +68,7 @@ class Trainer(object):
         state_dict = {
             "epoch": epoch,
             "current_loss": loss,
-            "utterance_encoder_state_dict": self.model.utterance_encoder.state_dict(),
+            #"utterance_encoder_state_dict": self.model.utterance_encoder.state_dict(),
             # "tree_encoder_state_dict": self.model.tree_encoder.state_dict(),
             "decoder_state_dict": self.model.decoder.state_dict()
         }
@@ -103,12 +104,12 @@ class Trainer(object):
                 self.optim.zero_grad()
                 batch_loss.backward()
                 # gradient clipping
-                nn.utils.clip_grad_norm_(self.model.utterance_encoder.parameters(), config.max_grad_norm)
+                # nn.utils.clip_grad_norm_(self.model.utterance_encoder.parameters(), config.max_grad_norm)
                 # nn.utils.clip_grad_norm_(self.model.tree_encoder.parameters(), config.max_grad_norm)
                 nn.utils.clip_grad_norm_(self.model.decoder.parameters(), config.max_grad_norm)
                 self.optim.step()
                 batch_loss = batch_loss.detach().item()
-                msg = "{}/{} {} - ETA : {} - loss : {:.4f}" \
+                msg = "{}/{} {} - ETA : {} - loss : {}" \
                     .format(batch_idx, batch_num, progress_bar(batch_idx, batch_num),
                             eta(start, batch_idx, batch_num), batch_loss)
                 print(msg, end="\r")
@@ -120,7 +121,7 @@ class Trainer(object):
                 best_loss = val_loss
             self.save_model(val_loss, epoch)
 
-            print("Epoch {} took {} - final loss : {:.4f} - val loss :{:.4f}"
+            print("Epoch {} took {} - final loss : {} - val loss :{}"
                   .format(epoch, user_friendly_time(time_since(start)), batch_loss, val_loss))
 
     def step(self, train_data):
@@ -134,32 +135,32 @@ class Trainer(object):
         enc_mask = (src_seq == 0).bool()
 
         if config.use_gpu:
-            src_seq = src_seq.to(config.device)
+        #    src_seq = src_seq.to(config.device)
             ext_src_seq = ext_src_seq.to(config.device)
-            src_len = src_len.to(config.device)
+        #    src_len = src_len.to(config.device)
             trg_seq = trg_seq.to(config.device)
             ext_trg_seq = ext_trg_seq.to(config.device)
             enc_mask = enc_mask.to(config.device)
-            if config.use_tag:
-                tag_seq = tag_seq.to(config.device)
-            else:
-                tag_seq = None
+        #    if config.use_tag:
+        #        tag_seq = tag_seq.to(config.device)
+        #    else:
+        #        tag_seq = None
 
-        enc_outputs, enc_states = self.model.utterance_encoder(src_seq, src_len, tag_seq)
-        enc_h, enc_c = enc_states
+        #enc_outputs, enc_states = self.model.utterance_encoder(src_seq, src_len, tag_seq)
+        #enc_h, enc_c = enc_states
 #        encode_states = (enc_h, enc_c)
 
         use_doubled = torch.cat([use_vec, use_vec], axis=0).unsqueeze(1)
-        enc_h = torch.cat([use_doubled, enc_h], axis=-1)
-        enc_c = torch.cat([use_doubled, enc_c], axis=-1)
-        encode_states = (enc_h, enc_c)
+        #enc_h = torch.cat([use_doubled, enc_h], axis=-1)
+        #enc_c = torch.cat([use_doubled, enc_c], axis=-1)
+        encode_states = (use_doubled, use_doubled)
 
         sos_trg = trg_seq[:, :-1]
         eos_trg = trg_seq[:, 1:]
 
         if config.use_pointer:
             eos_trg = ext_trg_seq[:, 1:]
-        logits = self.model.decoder(sos_trg, ext_src_seq, encode_states, enc_outputs, enc_mask)
+        logits = self.model.decoder(sos_trg, ext_src_seq, encode_states, enc_mask)
         batch_size, nsteps, _ = logits.size()
         preds = logits.view(batch_size * nsteps, -1)
         targets = eos_trg.contiguous().view(-1)
