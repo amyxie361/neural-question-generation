@@ -124,7 +124,7 @@ class Trainer(object):
 
     def step(self, train_data):
         #if config.use_tag:
-        src_seq, ext_src_seq, src_len, trg_seq, ext_trg_seq, trg_len, tag_seq, _, tree, sent = train_data
+        src_seq, ext_src_seq, src_len, trg_seq, ext_trg_seq, trg_len, tag_seq, _, tree, sent, rel_seq = train_data
         # else:
         #     src_seq, ext_src_seq, src_len, trg_seq, ext_trg_seq, trg_len, tree, _ = train_data
         #     tag_seq = None
@@ -140,6 +140,7 @@ class Trainer(object):
             ext_trg_seq = ext_trg_seq.to(config.device)
             enc_mask = enc_mask.to(config.device)
             sent = sent.to(config.device)
+            rel_seq = rel_seq.to(config.device)
             if config.use_tag:
                 tag_seq = tag_seq.to(config.device)
             else:
@@ -147,20 +148,14 @@ class Trainer(object):
 
         tree = tree[0] # TODO: tree can't be batched
         enc_outputs, enc_states = self.model.utterance_encoder(src_seq, src_len, tag_seq)
-        tree_enc_o, tree_enc_c, tree_enc_h = self.model.tree_encoder(tree, sent) #todo construct tree input
+        
+        tree_enc_o, tree_enc_c, tree_enc_h = self.model.tree_encoder(tree, rel_seq) #todo construct tree input
         tree_enc_c_double = torch.cat((tree_enc_c, tree_enc_c), axis=0).unsqueeze(1)
         tree_enc_h_double = torch.cat((tree_enc_h, tree_enc_h), axis=0).unsqueeze(1)
-        #tree_enc_o_double = torch.cat((tree_enc_o[0], tree_enc_o[0])).unsqueeze(0)
-        #tree_enc_o_double = tree_enc_o_double.expand(enc_outputs[0].size(0), 2 * config.hidden_size)
-        #tree_output = tree_enc_o_double
+        
         enc_h, enc_c = enc_states
         enc_h = torch.cat([tree_enc_h_double, enc_h], axis=-1)
         enc_c = torch.cat([tree_enc_c_double, enc_c], axis=-1)
-        #tree_enc_states = (tree_enc_h.unsqueeze(0), tree_enc_c.unsqueeze(0))
-        # encode_c: 3x600
-        #enc_h = torch.zeros(enc_h.size()).to(config.device)
-        #enc_c = torch.zeros(enc_c.size()).to(config.device)
-        #enc_outputs = torch.zeros(enc_outputs.size()).to(config.device)
         encode_states = (enc_h, enc_c) # todo: same as above
 
         sos_trg = trg_seq[:, :-1]
