@@ -20,10 +20,10 @@ dev_tree_file = "../data/squad_dev_dependency_parse.txt"
 
 model_path = "./save/"
 exp_name = "tree_v2_noFreeze"
-model_path = "./save/" + exp_name + "/train_403160221/1_6.08"
-train = True
-test = False
-device = "cuda:3"
+model_path = "./save/" + exp_name + "/train_403160657/10_1.92"
+train = False
+test = True
+device = "cuda:0"
 use_gpu = True
 debug = False
 debug_num = 100
