@@ -67,7 +67,7 @@ class BeamSearcher(object):
         golden_fw = open(self.golden_dir, "w")
         for i, eval_data in enumerate(self.data_loader):
             if config.use_tag:
-                src_seq, ext_src_seq, src_len, trg_seq, ext_trg_seq, trg_len, tag_seq, oov_lst, tree, sent = eval_data
+                src_seq, ext_src_seq, src_len, trg_seq, ext_trg_seq, trg_len, tag_seq, oov_lst, tree, sent, rel_seq = eval_data
                 #src_seq, ext_src_seq, src_len, trg_seq, \
                 #ext_trg_seq, trg_len, tag_seq, oov_lst = eval_data
             else:
@@ -78,7 +78,7 @@ class BeamSearcher(object):
             #print(trg_seq)
             print(trg_seq)
             print(" ".join([self.idx2tok[id_] for id_ in trg_seq]))
-            best_question = self.beam_search(src_seq, ext_src_seq, src_len, tag_seq, tree, sent)
+            best_question = self.beam_search(src_seq, ext_src_seq, src_len, tag_seq, tree, sent, rel_seq)
             # discard START  token
             output_indices = [int(idx) for idx in best_question.tokens[1:-1]]
             decoded_words = outputids2words(output_indices, self.idx2tok, oov_lst[0])
@@ -98,7 +98,7 @@ class BeamSearcher(object):
         pred_fw.close()
         golden_fw.close()
 
-    def beam_search(self, src_seq, ext_src_seq, src_len, tag_seq, tree, sent):
+    def beam_search(self, src_seq, ext_src_seq, src_len, tag_seq, tree, sent, rel_seq):
         zeros = torch.zeros_like(src_seq)
         enc_mask = torch.BoolTensor(src_seq == zeros)
         src_len = torch.LongTensor(src_len)
@@ -111,13 +111,14 @@ class BeamSearcher(object):
             enc_mask = enc_mask.to(config.device)
             prev_context = prev_context.to(config.device)
             sent = sent.to(config.device)
+            rel_seq = rel_seq.to(config.device)
             if config.use_tag:
                 tag_seq = tag_seq.to(config.device)
 
         # forward encoder
         tree = tree[0]
         enc_outputs, enc_states = self.model.utterance_encoder(src_seq, src_len, tag_seq)
-        tree_enc_o, tree_enc_c, tree_enc_h = self.model.tree_encoder(tree, sent)
+        tree_enc_o, tree_enc_c, tree_enc_h = self.model.tree_encoder(tree, rel_seq)
         tree_enc_c_double = torch.cat([tree_enc_c, tree_enc_c], axis=0).unsqueeze(1)
         tree_enc_h_double = torch.cat([tree_enc_h, tree_enc_h], axis=0).unsqueeze(1)
         #tree_enc_o_double = torch.cat((tree_enc_o[0], tree_enc_o[0])).unsqueeze(0)
