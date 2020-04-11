@@ -213,12 +213,13 @@ class Decoder(nn.Module):
         # y : [b]
 
         embedded = self.embedding(y.unsqueeze(1))
-        #lstm_inputs = self.reduce_layer(torch.cat([embedded, prev_context], dim=2))
+        #lstm_inputs = self.reduce_layer(embedded)
+        lstm_inputs = embedded
         output, states = self.lstm(lstm_inputs, prev_states)
         #context, energy = self.attention(output, encoder_features, encoder_mask)
         #concat_input = torch.cat((output, context), dim=2).squeeze(dim=1)
         #logit_input = torch.tanh(self.concat_layer(concat_input))
-        logit = self.logit_laye(torch.tanh(output))  # [b, |V|]
+        logit = self.logit_layer(torch.tanh(output.squeeze(dim=1)))  # [b, |V|]
 
         if config.use_pointer:
             batch_size = y.size(0)
@@ -233,7 +234,7 @@ class Decoder(nn.Module):
             # forcing UNK prob 0
             logit[:, UNK_ID] = -INF
 
-        return logit, states, context
+        return logit, states
 
 
 class Seq2seq(nn.Module):

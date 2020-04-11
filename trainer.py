@@ -60,7 +60,8 @@ class Trainer(object):
 
         self.lr = config.lr
         # self.optim = optim.SGD(filter(lambda p: p.requires_grad, params), self.lr, momentum=0.8)
-        self.optim = optim.SGD(filter(lambda p: p.requires_grad, params), self.lr)
+        # self.optim = optim.SGD(filter(lambda p: p.requires_grad, params), self.lr)
+        self.optim = optim.Adam(filter(lambda p: p.requires_grad, params), self.lr)
         # self.optim = optim.Adam(params)
         self.criterion = nn.CrossEntropyLoss(ignore_index=0)
 
@@ -109,7 +110,7 @@ class Trainer(object):
                 nn.utils.clip_grad_norm_(self.model.decoder.parameters(), config.max_grad_norm)
                 self.optim.step()
                 batch_loss = batch_loss.detach().item()
-                msg = "{}/{} {} - ETA : {} - loss : {}" \
+                msg = "{}/{} {} - ETA : {} - loss : {:.4f}" \
                     .format(batch_idx, batch_num, progress_bar(batch_idx, batch_num),
                             eta(start, batch_idx, batch_num), batch_loss)
                 print(msg, end="\r")
@@ -121,7 +122,7 @@ class Trainer(object):
                 best_loss = val_loss
             self.save_model(val_loss, epoch)
 
-            print("Epoch {} took {} - final loss : {} - val loss :{}"
+            print("Epoch {} took {} - final loss : {:.4f} - val loss :{:.4f}"
                   .format(epoch, user_friendly_time(time_since(start)), batch_loss, val_loss))
 
     def step(self, train_data):

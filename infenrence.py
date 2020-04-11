@@ -51,7 +51,7 @@ class BeamSearcher(object):
                                       debug=config.debug,
                                       num=100)
 
-        _, _, self.test_data, _ = pickle.load(open(config.dev_src_file, 'rb'))
+        # _, _, self.test_data, _ = pickle.load(open(config.dev_src_file, 'rb'))
 
         self.tok2idx = word2idx
         self.idx2tok = {idx: tok for tok, idx in self.tok2idx.items()}
@@ -93,7 +93,8 @@ class BeamSearcher(object):
             decoded_words = " ".join(decoded_words)
             print(decoded_words)
             # golden_question = trg_seq
-            golden_question = self.test_data[i]
+            # golden_question = self.test_data[i]
+            golden_question = " ".join([self.idx2tok[id_] for id_ in trg_seq])
             #print("write {}th question".format(i))
             pred_fw.write(decoded_words + "\n")
             golden_fw.write(golden_question + "\n")
@@ -120,20 +121,20 @@ class BeamSearcher(object):
 
 
         # forward encoder
-        enc_outputs, enc_states = self.model.utterance_encoder(src_seq, src_len, tag_seq)
-        h, c = enc_states
+        # enc_outputs, enc_states = self.model.utterance_encoder(src_seq, src_len, tag_seq)
+        # h, c = enc_states
         use_doubled = torch.cat([use_vec, use_vec], axis=0).unsqueeze(1)
-        h = self.model.decoder.init_trans_h(torch.cat([use_doubled, h], axis=-1))
-        c = self.model.decoder.init_trans_c(torch.cat([use_doubled, c], axis=-1))
+        h = self.model.decoder.init_trans_h(use_doubled)
+        c = self.model.decoder.init_trans_c(use_doubled)
         hypotheses = [Hypothesis(tokens=[self.tok2idx[START_TOKEN]],
                                  log_probs=[0.0],
                                  state=(h[:, 0, :], c[:, 0, :]),
                                  context=prev_context[0]) for _ in range(config.beam_size)]
         # tile enc_outputs, enc_mask for beam search
         ext_src_seq = ext_src_seq.repeat(config.beam_size, 1)
-        enc_outputs = enc_outputs.repeat(config.beam_size, 1, 1)
+        # enc_outputs = enc_outputs.repeat(config.beam_size, 1, 1)
 
-        enc_features = self.model.decoder.get_encoder_features(enc_outputs)
+        # enc_features = self.model.decoder.get_encoder_features(enc_outputs)
         enc_mask = enc_mask.repeat(config.beam_size, 1)
         num_steps = 0
         results = []
@@ -148,21 +149,20 @@ class BeamSearcher(object):
             # make batch of which size is beam size
             all_state_h = []
             all_state_c = []
-            all_context = []
+            # all_context = []
             for h in hypotheses:
                 state_h, state_c = h.state  # [num_layers, d]
                 all_state_h.append(state_h)
                 all_state_c.append(state_c)
-                all_context.append(h.context)
+                # all_context.append(h.context)
 
             prev_h = torch.stack(all_state_h, dim=1)  # [num_layers, beam, d]
             prev_c = torch.stack(all_state_c, dim=1)  # [num_layers, beam, d]
-            prev_context = torch.stack(all_context, dim=0)
+            # prev_context = torch.stack(all_context, dim=0)
             prev_states = (prev_h, prev_c)
             # [beam_size, |V|]
-            logits, states, context_vector = self.model.decoder.decode(prev_y, ext_src_seq,
-                                                                       prev_states, prev_context,
-                                                                       enc_features, enc_mask)
+            logits, states = self.model.decoder.decode(prev_y, ext_src_seq,
+                                                                       prev_states, enc_mask)
             h_state, c_state = states
             log_probs = F.log_softmax(logits, dim=1)
             top_k_log_probs, top_k_ids \
@@ -173,12 +173,11 @@ class BeamSearcher(object):
             for i in range(num_orig_hypotheses):
                 h = hypotheses[i]
                 state_i = (h_state[:, i, :], c_state[:, i, :])
-                context_i = context_vector[i]
+                # context_i = context_vector[i]
                 for j in range(config.beam_size * 2):
                     new_h = h.extend(token=top_k_ids[i][j].item(),
                                      log_prob=top_k_log_probs[i][j].item(),
-                                     state=state_i,
-                                     context=context_i)
+                                     state=state_i)
                     all_hypotheses.append(new_h)
 
             hypotheses = []

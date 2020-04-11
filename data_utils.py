@@ -11,9 +11,9 @@ import torch.utils.data as data
 from tqdm import tqdm
 import nltk
 
-import stanza
-stanza.download('en')
-nlp = stanza.Pipeline()
+# import stanza
+#stanza.download('en')
+# nlp = stanza.Pipeline()
 
 import config
 
@@ -332,8 +332,19 @@ class TreeData(data.Dataset):
 
 class SQuadDatasetWithTag(data.Dataset):
     def __init__(self, src_file, tree_file, max_length, word2idx, vocab_file, debug=False, num=config.debug_num):
-        tags, srcs, _, tree_info = pickle.load(open(src_file, 'rb'))
+        # tags, srcs, _, tree_info = pickle.load(open(src_file, 'rb'))
+        data_file = open(src_file, "r")
         #print(self.trgs[0])
+        data = []
+        count = 0
+        for line in data_file:
+            sent = json.loads(line)
+            if len(sent) < 5:
+                continue
+            data.append(sent)
+            count += 1
+            if count > config.data_num:
+                break
 
         # lines = open(src_file, "r").readlines()
         self.srcs = []
@@ -341,17 +352,25 @@ class SQuadDatasetWithTag(data.Dataset):
         self.sents = []
         self.trees = []
         self.trgs = []
-        self.entity2idx = {"O": 0, "B_ans": 1, "I_ans": 2}
+        # self.entity2idx = {"O": 0, "B_ans": 1, "I_ans": 2}
         # print("load original file")
-        for idx in tqdm(range(len(tags))):
-            tag = [self.entity2idx["O"]] + [self.entity2idx[t] for t in tags[idx]] + [self.entity2idx["O"]]
-            src = [START_TOKEN] + srcs[idx] + [END_TOKEN]
-            self.srcs.append(src)
-            self.tags.append(tag)
-            sent, tree = self.read_data(tree_info[idx])
-            self.sents.append(sent)
-            self.trgs.append(sent)
-            self.trees.append(tree)
+        # for idx in tqdm(range(len(tags))):
+        #     tag = [self.entity2idx["O"]] + [self.entity2idx[t] for t in tags[idx]] + [self.entity2idx["O"]]
+        #     src = [START_TOKEN] + srcs[idx] + [END_TOKEN]
+        #     self.srcs.append(src)
+        #     self.tags.append(tag)
+        #     sent, tree = self.read_data(tree_info[idx])
+        #     self.sents.append(sent)
+        #     self.trgs.append(sent)
+        #     self.trees.append(tree)
+        for example in data:
+            self.sents.append(" ".join(example))
+            self.trgs.append(example)
+            self.srcs.append([])
+            self.tags.append([])
+            self.trees.append(None)
+        self.num_seqs = len(self.trgs)
+
 
         # print("load vocab")
 
@@ -374,7 +393,7 @@ class SQuadDatasetWithTag(data.Dataset):
         self.num_seqs = len(self.srcs)
 
         if debug:
-            #num = config.debug_num 
+            num = config.debug_num 
             self.srcs = self.srcs[:num]
             self.trgs = self.trgs[:num]
             self.tags = self.tags[:num]
@@ -391,10 +410,11 @@ class SQuadDatasetWithTag(data.Dataset):
 
         tag_seq = torch.Tensor(tag_seq[:self.max_length])
         src_seq, ext_src_seq, oov_lst = self.context2ids(src_seq, self.word2idx)
+        trg_seq, ext_trg_seq, oov_lst = self.context2ids(trg_seq, self.word2idx)
         sent_, ext_sent = self.question2ids(sent, self.word2idx, oov_lst)
-        tree_ = self.read_tree(tree)
-        trg_seq, ext_trg_seq = self.question2ids(trg_seq, self.word2idx, oov_lst)
-        return src_seq, ext_src_seq, trg_seq, ext_trg_seq, oov_lst, tag_seq, tree_, sent_
+        # tree_ = self.read_tree(tree)
+        # trg_seq, ext_trg_seq = self.question2ids(trg_seq, self.word2idx, oov_lst)
+        return src_seq, ext_src_seq, trg_seq, ext_trg_seq, oov_lst, tag_seq, tree, sent_
 
     def __len__(self):
         return self.num_seqs
