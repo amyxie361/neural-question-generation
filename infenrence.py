@@ -107,7 +107,8 @@ class BeamSearcher(object):
         enc_mask = torch.BoolTensor(src_seq == zeros)
         src_len = torch.LongTensor(src_len)
         prev_context = torch.zeros(1, 1, 2 * config.hidden_size)
-        use_vec = embed([" ".join([self.idx2tok[i] for i in sent.tolist()[0]])]).numpy()
+        sents = [" ".join([self.idx2tok[i] for i in s]) for s in sent.tolist()]
+        use_vec = embed(sents).numpy()
         
         if config.use_gpu:
             src_seq = src_seq.to(config.device)

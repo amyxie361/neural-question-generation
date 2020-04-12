@@ -36,7 +36,7 @@ class Trainer(object):
                                        word2idx,
                                        config.vocab_file,
                                        use_tag=config.use_tag,
-                                       batch_size=1,
+                                       batch_size=config.batch_size,
                                        debug=config.debug)
         self.dev_loader = get_loader(config.dev_src_file,
                                      # config.dev_tag_file,
@@ -44,8 +44,8 @@ class Trainer(object):
                                      word2idx,
                                      config.vocab_file,
                                      use_tag=config.use_tag,
-                                     batch_size=1,
-                                     debug=config.debug,
+                                     batch_size=config.batch_size,
+                                     debug=True,
                                      num=100)
 
         train_dir = os.path.join("./save", config.exp_name)
@@ -98,7 +98,7 @@ class Trainer(object):
                         self.optim.load_state_dict(state_dict)
                     else:
                         best_train_loss = batch_loss 
-
+                        self.save_model(batch_loss, 100 + epoch)
             #for batch_idx, train_data in enumerate(self.train_loader, start=1):
                 batch_loss = self.step(train_data)
 
@@ -130,9 +130,11 @@ class Trainer(object):
         src_seq, ext_src_seq, src_len, trg_seq, ext_trg_seq, trg_len, tag_seq, _ , _, sent= train_data
         src_len = torch.tensor(src_len, dtype=torch.long)
 
-        use_vec = embed([" ".join([self.idx2tok[i] for i in sent.tolist()[0]])]).numpy()
+        sents = [" ".join([self.idx2tok[i] for i in s]) for s in sent.tolist()]
+    
+        use_vec = embed(sents).numpy()
         # batch x 512
-        use_vec = torch.from_numpy(use_vec).float().to(config.device)
+        use_vec = torch.from_numpy(use_vec).float().to(config.device).unsqueeze(0)
         enc_mask = (src_seq == 0).bool()
 
         if config.use_gpu:
@@ -151,7 +153,7 @@ class Trainer(object):
         #enc_h, enc_c = enc_states
 #        encode_states = (enc_h, enc_c)
 
-        use_doubled = torch.cat([use_vec, use_vec], axis=0).unsqueeze(1)
+        use_doubled = torch.cat([use_vec, use_vec], axis=0)
         #enc_h = torch.cat([use_doubled, enc_h], axis=-1)
         #enc_c = torch.cat([use_doubled, enc_c], axis=-1)
         encode_states = (use_doubled, use_doubled)
