@@ -36,6 +36,7 @@ class Hypothesis(object):
 class BeamSearcher(object):
     def __init__(self, model_path, output_dir):
         with open(config.word2idx_file, "rb") as f:
+            print(config.word2idx_file)
             word2idx = pickle.load(f)
 
         self.output_dir = output_dir
@@ -69,33 +70,23 @@ class BeamSearcher(object):
         pred_fw = open(self.pred_dir, "w")
         golden_fw = open(self.golden_dir, "w")
         for i, eval_data in enumerate(self.data_loader):
-            if config.use_tag:
-                src_seq, ext_src_seq, src_len, trg_seq, ext_trg_seq, trg_len, tag_seq, oov_lst, _, sent = eval_data
-                #src_seq, ext_src_seq, src_len, trg_seq, \
-                #ext_trg_seq, trg_len, tag_seq, oov_lst = eval_data
-            else:
-                src_seq, ext_src_seq, src_len, \
-                trg_seq, ext_trg_seq, trg_len, oov_lst = eval_data
-                tag_seq = None
+            src_seq, ext_src_seq, src_len, trg_seq, ext_trg_seq, trg_len, tag_seq, oov_lst, _, sent = eval_data
             trg_seq = trg_seq.tolist()[0]
             #print(trg_seq)
-            print(trg_seq)
-            print(" ".join([self.idx2tok[id_] for id_ in trg_seq]))
+            golden_question = " ".join([self.idx2tok[id_] for id_ in trg_seq])
+            print(golden_question)
             best_question = self.beam_search(src_seq, ext_src_seq, src_len, tag_seq, sent)
             # discard START  token
-            output_indices = [int(idx) for idx in best_question.tokens[1:-1]]
+            output_indices = [int(idx) for idx in best_question.tokens]
             decoded_words = outputids2words(output_indices, self.idx2tok, oov_lst[0])
             try:
                 fst_stop_idx = decoded_words.index(END_ID)
                 decoded_words = decoded_words[:fst_stop_idx]
             except ValueError:
                 decoded_words = decoded_words
-            decoded_words = " ".join(decoded_words)
+            decoded_words = " ".join(decoded_words).split(". ")[0] + "."
             print(decoded_words)
-            # golden_question = trg_seq
             # golden_question = self.test_data[i]
-            golden_question = " ".join([self.idx2tok[id_] for id_ in trg_seq])
-            #print("write {}th question".format(i))
             pred_fw.write(decoded_words + "\n")
             golden_fw.write(golden_question + "\n")
 

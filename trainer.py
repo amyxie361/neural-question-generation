@@ -46,7 +46,7 @@ class Trainer(object):
                                      use_tag=config.use_tag,
                                      batch_size=config.batch_size,
                                      debug=True,
-                                     num=100)
+                                     num=1000)
 
         train_dir = os.path.join("./save", config.exp_name)
         self.model_dir = os.path.join(train_dir, "train_%d" % int(time.strftime("%m%d%H%M%S")))
@@ -98,7 +98,7 @@ class Trainer(object):
                         self.optim.load_state_dict(state_dict)
                     else:
                         best_train_loss = batch_loss 
-                        self.save_model(batch_loss, 100 + epoch)
+                        self.save_model(batch_loss, 1000 + epoch)
             #for batch_idx, train_data in enumerate(self.train_loader, start=1):
                 batch_loss = self.step(train_data)
 
@@ -120,7 +120,7 @@ class Trainer(object):
             val_loss = self.evaluate(msg)
             if val_loss <= best_loss:
                 best_loss = val_loss
-            self.save_model(val_loss, epoch)
+                self.save_model(val_loss, epoch)
 
             print("Epoch {} took {} - final loss : {:.4f} - val loss :{:.4f}"
                   .format(epoch, user_friendly_time(time_since(start)), batch_loss, val_loss))
