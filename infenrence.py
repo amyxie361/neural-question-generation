@@ -1,4 +1,4 @@
-from model import SeqTree2seq
+from model import Seq2seq
 import os
 from data_utils import START_TOKEN, END_ID, get_loader, UNK_ID, outputids2words
 import torch
@@ -11,17 +11,15 @@ import tensorflow_hub as hub
 embed = hub.load("https://tfhub.dev/google/universal-sentence-encoder/4")
 
 class Hypothesis(object):
-    def __init__(self, tokens, log_probs, state, context=None):
+    def __init__(self, tokens, log_probs, state):
         self.tokens = tokens
         self.log_probs = log_probs
         self.state = state
-        self.context = context
 
-    def extend(self, token, log_prob, state, context=None):
+    def extend(self, token, log_prob, state):
         h = Hypothesis(tokens=self.tokens + [token],
                        log_probs=self.log_probs + [log_prob],
-                       state=state,
-                       context=context)
+                       state=state)
         return h
 
     @property
@@ -40,23 +38,16 @@ class BeamSearcher(object):
             word2idx = pickle.load(f)
 
         self.output_dir = output_dir
-        #self.test_data = open(config.test_trg_file, "r").readlines()
         self.data_loader = get_loader(config.dev_src_file,
-                                      # config.dev_tag_file,
-                                      config.dev_tree_file,
                                       word2idx,
-                                      config.vocab_file,
-                                      use_tag=config.use_tag,
                                       batch_size=1,
                                       shuffle=False,
                                       debug=config.debug,
                                       num=100)
 
-        # _, _, self.test_data, _ = pickle.load(open(config.dev_src_file, 'rb'))
-
         self.tok2idx = word2idx
         self.idx2tok = {idx: tok for tok, idx in self.tok2idx.items()}
-        self.model = SeqTree2seq(model_path=model_path)
+        self.model = Seq2seq(model_path=model_path)
         self.pred_dir = output_dir + "/generated.txt"
         self.golden_dir = output_dir + "/golden.txt"
         if not os.path.exists(output_dir):
@@ -70,14 +61,15 @@ class BeamSearcher(object):
         pred_fw = open(self.pred_dir, "w")
         golden_fw = open(self.golden_dir, "w")
         for i, eval_data in enumerate(self.data_loader):
-            src_seq, ext_src_seq, src_len, trg_seq, ext_trg_seq, trg_len, tag_seq, oov_lst, _, sent = eval_data
+            trg_seq, ext_trg_seq, trg_len, oov_lst = eval_data
             trg_seq = trg_seq.tolist()[0]
-            #print(trg_seq)
             golden_question = " ".join([self.idx2tok[id_] for id_ in trg_seq])
+            print("==========")
             print(golden_question)
-            best_question = self.beam_search(src_seq, ext_src_seq, src_len, tag_seq, sent)
+            print("\n")
+            best_question = self.beam_search(trg_seq)
             # discard START  token
-            output_indices = [int(idx) for idx in best_question.tokens]
+            output_indices = [int(idx) for idx in best_question.tokens[1:]]
             decoded_words = outputids2words(output_indices, self.idx2tok, oov_lst[0])
             try:
                 fst_stop_idx = decoded_words.index(END_ID)
@@ -86,48 +78,28 @@ class BeamSearcher(object):
                 decoded_words = decoded_words
             decoded_words = " ".join(decoded_words).split(". ")[0] + "."
             print(decoded_words)
-            # golden_question = self.test_data[i]
             pred_fw.write(decoded_words + "\n")
             golden_fw.write(golden_question + "\n")
 
         pred_fw.close()
         golden_fw.close()
 
-    def beam_search(self, src_seq, ext_src_seq, src_len, tag_seq, sent):
-        zeros = torch.zeros_like(src_seq)
-        enc_mask = torch.BoolTensor(src_seq == zeros)
-        src_len = torch.LongTensor(src_len)
+    def beam_search(self, sent):
         prev_context = torch.zeros(1, 1, 2 * config.hidden_size)
-        sents = [" ".join([self.idx2tok[i] for i in s]) for s in sent.tolist()]
+        sents = [" ".join([self.idx2tok[i] for i in sent])]
         use_vec = embed(sents).numpy()
         
         if config.use_gpu:
-            src_seq = src_seq.to(config.device)
-            ext_src_seq = ext_src_seq.to(config.device)
-            src_len = src_len.to(config.device)
-            enc_mask = enc_mask.to(config.device)
             prev_context = prev_context.to(config.device)
             use_vec = torch.from_numpy(use_vec).float().to(config.device)
-            if config.use_tag:
-                tag_seq = tag_seq.to(config.device)
 
-
-        # forward encoder
-        # enc_outputs, enc_states = self.model.utterance_encoder(src_seq, src_len, tag_seq)
-        # h, c = enc_states
         use_doubled = torch.cat([use_vec, use_vec], axis=0).unsqueeze(1)
         h = self.model.decoder.init_trans_h(use_doubled)
         c = self.model.decoder.init_trans_c(use_doubled)
         hypotheses = [Hypothesis(tokens=[self.tok2idx[START_TOKEN]],
                                  log_probs=[0.0],
-                                 state=(h[:, 0, :], c[:, 0, :]),
-                                 context=prev_context[0]) for _ in range(config.beam_size)]
+                                 state=(h[:, 0, :], c[:, 0, :]))]
         # tile enc_outputs, enc_mask for beam search
-        ext_src_seq = ext_src_seq.repeat(config.beam_size, 1)
-        # enc_outputs = enc_outputs.repeat(config.beam_size, 1, 1)
-
-        # enc_features = self.model.decoder.get_encoder_features(enc_outputs)
-        enc_mask = enc_mask.repeat(config.beam_size, 1)
         num_steps = 0
         results = []
         while num_steps < config.max_decode_step and len(results) < config.beam_size:
@@ -141,20 +113,16 @@ class BeamSearcher(object):
             # make batch of which size is beam size
             all_state_h = []
             all_state_c = []
-            # all_context = []
             for h in hypotheses:
                 state_h, state_c = h.state  # [num_layers, d]
                 all_state_h.append(state_h)
                 all_state_c.append(state_c)
-                # all_context.append(h.context)
 
             prev_h = torch.stack(all_state_h, dim=1)  # [num_layers, beam, d]
             prev_c = torch.stack(all_state_c, dim=1)  # [num_layers, beam, d]
-            # prev_context = torch.stack(all_context, dim=0)
             prev_states = (prev_h, prev_c)
             # [beam_size, |V|]
-            logits, states = self.model.decoder.decode(prev_y, ext_src_seq,
-                                                                       prev_states, enc_mask)
+            logits, states = self.model.decoder.decode(prev_y, prev_states)
             h_state, c_state = states
             log_probs = F.log_softmax(logits, dim=1)
             top_k_log_probs, top_k_ids \
@@ -165,7 +133,6 @@ class BeamSearcher(object):
             for i in range(num_orig_hypotheses):
                 h = hypotheses[i]
                 state_i = (h_state[:, i, :], c_state[:, i, :])
-                # context_i = context_vector[i]
                 for j in range(config.beam_size * 2):
                     new_h = h.extend(token=top_k_ids[i][j].item(),
                                      log_prob=top_k_log_probs[i][j].item(),

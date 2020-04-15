@@ -27,84 +27,6 @@ UNK_ID = 1
 START_ID = 2
 END_ID = 3
 
-class SQuadDataset(data.Dataset):
-    def __init__(self, src_file, trg_file, tree_file, max_length, word2idx, debug=False): #todo, to form tree input
-        self.src = open(src_file, "r").readlines()
-        self.trg = open(trg_file, "r").readlines()
-
-        assert len(self.src) == len(self.trg), \
-            "the number of source sequence {}" " and target sequence {} must be the same" \
-                .format(len(self.src), len(self.trg))
-
-        self.max_length = max_length
-        self.word2idx = word2idx
-        self.num_seqs = len(self.src)
-
-        if debug:
-            self.src = self.src[:100]
-            self.trg = self.trg[:100]
-            self.num_seqs = 100
-
-    def __getitem__(self, index):
-        src_seq = self.src[index]
-        trg_seq = self.trg[index]
-        src_seq, ext_src_seq, oov_lst = self.context2ids(src_seq, self.word2idx)
-        trg_seq, ext_trg_seq = self.question2ids(trg_seq, self.word2idx, oov_lst)
-        return src_seq, ext_src_seq, trg_seq, ext_trg_seq, oov_lst
-
-    def __len__(self):
-        return self.num_seqs
-
-    def context2ids(self, sequence, word2idx):
-        ids = list()
-        extended_ids = list()
-        oov_lst = list()
-        ids.append(word2idx[START_TOKEN])
-        extended_ids.append(word2idx[START_TOKEN])
-        tokens = sequence.strip().split(" ")
-
-        for token in tokens:
-            if token in word2idx:
-                ids.append(word2idx[token])
-                extended_ids.append(word2idx[token])
-            else:
-                ids.append(word2idx[UNK_TOKEN])
-                if token not in oov_lst:
-                    oov_lst.append(token)
-                extended_ids.append(len(word2idx) + oov_lst.index(token))
-        ids.append(word2idx[END_TOKEN])
-        extended_ids.append(word2idx[END_TOKEN])
-
-        ids = torch.Tensor(ids)
-        extended_ids = torch.Tensor(extended_ids)
-
-        return ids, extended_ids, oov_lst
-
-    def question2ids(self, sequence, word2idx, oov_lst):
-        ids = list()
-        extended_ids = list()
-        ids.append(word2idx[START_TOKEN])
-        extended_ids.append(word2idx[START_TOKEN])
-        tokens = sequence.strip().split(" ")
-
-        for token in tokens:
-            if token in word2idx:
-                ids.append(word2idx[token])
-                extended_ids.append(word2idx[token])
-            else:
-                ids.append(word2idx[UNK_TOKEN])
-                if token in oov_lst:
-                    extended_ids.append(len(word2idx) + oov_lst.index(token))
-                else:
-                    extended_ids.append(word2idx[UNK_TOKEN])
-        ids.append(word2idx[END_TOKEN])
-        extended_ids.append(word2idx[END_TOKEN])
-
-        ids = torch.Tensor(ids)
-        extended_ids = torch.Tensor(extended_ids)
-
-        return ids, extended_ids
-
 
 def collate_fn(data):
     def merge(sequences):
@@ -116,225 +38,16 @@ def collate_fn(data):
         return padded_seqs, lengths
 
     data.sort(key=lambda x: len(x[0]), reverse=True)
-    src_seqs, ext_src_seqs, trg_seqs, ext_trg_seqs, oov_lst = zip(*data)
+    trg_seqs, ext_trg_seqs, oov_lst = zip(*data)
 
-    src_seqs, src_len = merge(src_seqs)
-    ext_src_seqs, _ = merge(ext_src_seqs)
     trg_seqs, trg_len = merge(trg_seqs)
     ext_trg_seqs, _ = merge(ext_trg_seqs)
 
-    return src_seqs, ext_src_seqs, src_len, trg_seqs, ext_trg_seqs, trg_len, oov_lst
-
-# tree object from stanfordnlp/treelstm
-class Tree(object):
-    def __init__(self):
-        self.parent = None
-        self.num_children = 0
-        self.children = list()
-
-    def add_child(self, child):
-        child.parent = self
-        self.num_children += 1
-        self.children.append(child)
-
-    def size(self):
-        if getattr(self, '_size'):
-            return self._size
-        count = 1
-        for i in range(self.num_children):
-            count += self.children[i].size()
-        self._size = count
-        return self._size
-
-    def depth(self):
-        if getattr(self, '_depth'):
-            return self._depth
-        count = 0
-        if self.num_children > 0:
-            for i in range(self.num_children):
-                child_depth = self.children[i].depth()
-                if child_depth > count:
-                    count = child_depth
-            count += 1
-        self._depth = count
-        return self._depth
-
-class Vocab(object):
-    def __init__(self, filename=None, data=None, lower=False):
-        self.idxToLabel = {}
-        self.labelToIdx = {}
-        self.lower = lower
-
-        # Special entries will not be pruned.
-        self.special = []
-        if data is not None:
-            self.addSpecials(data)
-        if filename is not None:
-            self.loadFile(filename)
-
-    def size(self):
-        return len(self.idxToLabel)
-
-    # Load entries from a file.
-    def loadFile(self, filename):
-        idx = 0
-        file_ = open(filename, 'r')
-        for line in tqdm(file_):
-            token = line.rstrip('\n')
-            self.add(token)
-            idx += 1
-
-    def getIndex(self, key, default=None):
-        key = key.lower() if self.lower else key
-        try:
-            return self.labelToIdx[key]
-        except KeyError:
-            return default
-
-    def getLabel(self, idx, default=None):
-        try:
-            return self.idxToLabel[idx]
-        except KeyError:
-            return default
-
-    # Mark this `label` and `idx` as special
-    def addSpecial(self, label, idx=None):
-        idx = self.add(label)
-        self.special += [idx]
-
-    # Mark all labels in `labels` as specials
-    def addSpecials(self, labels):
-        for label in labels:
-            self.addSpecial(label)
-
-    # Add `label` in the dictionary. Use `idx` as its index if given.
-    def add(self, label):
-        label = label.lower() if self.lower else label
-        if label in self.labelToIdx:
-            idx = self.labelToIdx[label]
-        else:
-            idx = len(self.idxToLabel)
-            self.idxToLabel[idx] = label
-            self.labelToIdx[label] = idx
-        return idx
-
-    # Convert `labels` to indices. Use `unkWord` if not found.
-    # Optionally insert `bosWord` at the beginning and `eosWord` at the .
-    def convertToIdx(self, labels, unkWord, bosWord=None, eosWord=None):
-        vec = []
-
-        if bosWord is not None:
-            vec += [self.getIndex(bosWord)]
-
-        unk = self.getIndex(unkWord)
-        vec += [self.getIndex(label, default=unk) for label in labels]
-
-        if eosWord is not None:
-            vec += [self.getIndex(eosWord)]
-
-        return vec
-
-    # Convert `idx` to labels. If index `stop` is reached, convert it and return.
-    def convertToLabels(self, idx, stop):
-        labels = []
-
-        for i in idx:
-            labels += [self.getLabel(i)]
-            if i == stop:
-                break
-
-        return labels
-
-class TreeData(data.Dataset):
-    def __init__(self, path, vocab):
-        super(TreeData, self).__init__()
-
-        self.vocab = vocab
-
-        # self.sentences = self.read_sentences(path + '.toks')
-        self.sentences = []
-
-        # self.trees = self.read_trees(path + '.parents')
-        self.trees = []
-
-        self.read_data(path)
-
-        # assert(len(self.sentences) == len(self.trees))
-        # self.size = len(self.sentences)
-        # print("samples numbers:", self.size)
-
-    def __len__(self):
-        return self.size
-
-    def __getitem__(self, index):
-        tree = deepcopy(self.trees[index])
-        sent = deepcopy(self.sentences[index])
-        return tree, sent
-
-    def read_data(self, data):
-        #f = open(filename)
-        for line in tqdm(f):
-            #data = json.loads(line)
-            sentence = " ".join(data["toks"])
-            parents = " ".join(data["parents"])
-            self.sentences.append(self.read_sentence(sentence))
-            self.trees.append(self.read_tree(parents))
-
-    # def read_sentences(self, filename):
-    #     print("read sentence in tree")
-    #     with open(filename, 'r') as f:
-    #         sentences = [self.read_sentence(line) for line in tqdm(f.readlines())]
-    #     return sentences
-
-    def read_sentence(self, line):
-        indices = self.vocab.convertToIdx(line.split(), UNK_TOKEN)
-        return torch.tensor(indices, dtype=torch.long, device='cpu')
-
-    # def read_trees(self, filename):
-    #     print("read tree")
-    #     with open(filename, 'r') as f:
-    #         trees = [self.read_tree(line) for line in tqdm(f.readlines())]
-    #     return trees
-
-    def read_tree(self, line):
-        parents = list(map(int, line.split()))
-        trees = dict()
-        root = None
-        for i in range(1, len(parents) + 1):
-            if i - 1 not in trees.keys() and parents[i - 1] != -1:
-                idx = i
-                prev = None
-                while True:
-                    parent = parents[idx - 1]
-                    if parent == -1:
-                        break
-                    tree = Tree()
-                    if prev is not None:
-                        tree.add_child(prev)
-                    trees[idx - 1] = tree
-                    tree.idx = idx - 1
-                    if parent - 1 in trees.keys():
-                        trees[parent - 1].add_child(tree)
-                        break
-                    elif parent == 0:
-                        root = tree
-                        break
-                    else:
-                        prev = tree
-                        idx = parent
-        return root
-
-    # def read_labels(self, filename):
-    #     with open(filename, 'r') as f:
-    #         labels = list(map(lambda x: float(x), f.readlines()))
-    #         labels = torch.tensor(labels, dtype=torch.float, device='cpu')
-    #     return labels
+    return trg_seqs, ext_trg_seqs, trg_len, oov_lst
 
 class SQuadDatasetWithTag(data.Dataset):
-    def __init__(self, src_file, tree_file, max_length, word2idx, vocab_file, debug=False, num=config.debug_num):
-        # tags, srcs, _, tree_info = pickle.load(open(src_file, 'rb'))
+    def __init__(self, src_file,  max_length, word2idx, debug=False, num=config.debug_num):
         data_file = open(src_file, "r")
-        #print(self.trgs[0])
         data = []
         count = 0
         for line in data_file:
@@ -346,121 +59,27 @@ class SQuadDatasetWithTag(data.Dataset):
             if count > config.data_num:
                 break
 
-        # lines = open(src_file, "r").readlines()
-        self.srcs = []
-        self.tags = []
-        self.sents = []
-        self.trees = []
         self.trgs = []
-        # self.entity2idx = {"O": 0, "B_ans": 1, "I_ans": 2}
-        # print("load original file")
-        # for idx in tqdm(range(len(tags))):
-        #     tag = [self.entity2idx["O"]] + [self.entity2idx[t] for t in tags[idx]] + [self.entity2idx["O"]]
-        #     src = [START_TOKEN] + srcs[idx] + [END_TOKEN]
-        #     self.srcs.append(src)
-        #     self.tags.append(tag)
-        #     sent, tree = self.read_data(tree_info[idx])
-        #     self.sents.append(sent)
-        #     self.trgs.append(sent)
-        #     self.trees.append(tree)
         for example in data:
-            self.sents.append(" ".join(example))
             self.trgs.append(example)
-            self.srcs.append([])
-            self.tags.append([])
-            self.trees.append(None)
         self.num_seqs = len(self.trgs)
-
-
-        # print("load vocab")
-
-        # vocab = Vocab(filename=vocab_file,
-        #               data=[PAD_TOKEN, UNK_TOKEN,
-        #                     START_TOKEN, END_TOKEN])
-
-        # print("load tree")
-
-        # self.tree_data = TreeData(tree_file, vocab)
-        # self.trees = self.tree_data.trees
-        # self.sents = self.tree_data.sentences
-
-        # assert len(self.srcs) == len(self.sents), \
-        #     "the number of source sequence {}" " and target sequence {} must be the same" \
-        #         .format(len(self.srcs), len(self.sents))
 
         self.max_length = max_length
         self.word2idx = word2idx
-        self.num_seqs = len(self.srcs)
 
         if debug:
             num = config.debug_num 
-            self.srcs = self.srcs[:num]
             self.trgs = self.trgs[:num]
-            self.tags = self.tags[:num]
-            self.trees = self.trees[:num]
-            self.sents = self.sents[:num]
             self.num_seqs = num
 
     def __getitem__(self, index):
-        src_seq = self.srcs[index]
         trg_seq = self.trgs[index]
-        tag_seq = self.tags[index]
-        tree = self.trees[index]
-        sent = self.sents[index]
 
-        tag_seq = torch.Tensor(tag_seq[:self.max_length])
-        src_seq, ext_src_seq, oov_lst = self.context2ids(src_seq, self.word2idx)
         trg_seq, ext_trg_seq, oov_lst = self.context2ids(trg_seq, self.word2idx)
-        sent_, ext_sent = self.question2ids(sent, self.word2idx, oov_lst)
-        # tree_ = self.read_tree(tree)
-        # trg_seq, ext_trg_seq = self.question2ids(trg_seq, self.word2idx, oov_lst)
-        return src_seq, ext_src_seq, trg_seq, ext_trg_seq, oov_lst, tag_seq, tree, sent_
+        return trg_seq, ext_trg_seq, oov_lst
 
     def __len__(self):
         return self.num_seqs
-
-    def read_data(self, data):
-        # f = open(filename)
-        # for line in tqdm(f):
-        # data = json.loads(line)
-        sentence = " ".join(data["toks"])
-        parents = " ".join(data["parents"])
-
-        return sentence, parents
-            # self.sentences.append(self.read_sentence(sentence))
-            # self.trees.append(self.read_tree(parents))
-
-    # def read_sentence(self, line):
-    #     indices = self.vocab.convertToIdx(line.split(), UNK_TOKEN)
-    #     return torch.tensor(indices, dtype=torch.long, device='cpu')
-
-    def read_tree(self, line):
-        parents = list(map(int, line.split()))
-        trees = dict()
-        root = None
-        for i in range(1, len(parents) + 1):
-            if i - 1 not in trees.keys() and parents[i - 1] != -1:
-                idx = i
-                prev = None
-                while True:
-                    parent = parents[idx - 1]
-                    if parent == -1:
-                        break
-                    tree = Tree()
-                    if prev is not None:
-                        tree.add_child(prev)
-                    trees[idx - 1] = tree
-                    tree.idx = idx - 1
-                    if parent - 1 in trees.keys():
-                        trees[parent - 1].add_child(tree)
-                        break
-                    elif parent == 0:
-                        root = tree
-                        break
-                    else:
-                        prev = tree
-                        idx = parent
-        return root
 
     def context2ids(self, tokens, word2idx):
         ids = list()
@@ -484,76 +103,15 @@ class SQuadDatasetWithTag(data.Dataset):
 
         return ids, extended_ids, oov_lst
 
-    def question2ids(self, sequence, word2idx, oov_lst):
-        ids = list()
-        extended_ids = list()
-        ids.append(word2idx[START_TOKEN])
-        extended_ids.append(word2idx[START_TOKEN])
-        tokens = sequence.strip().split(" ")
-
-        for token in tokens:
-            if token in word2idx:
-                ids.append(word2idx[token])
-                extended_ids.append(word2idx[token])
-            else:
-                ids.append(word2idx[UNK_TOKEN])
-                if token in oov_lst:
-                    extended_ids.append(len(word2idx) + oov_lst.index(token))
-                else:
-                    extended_ids.append(word2idx[UNK_TOKEN])
-        ids.append(word2idx[END_TOKEN])
-        extended_ids.append(word2idx[END_TOKEN])
-
-        ids = torch.Tensor(ids)
-        extended_ids = torch.Tensor(extended_ids)
-
-        return ids, extended_ids
-
-
-def collate_fn_tag(data):
-    def merge(sequences, with_length=True):
-        if with_length:
-            lengths = [len(sequence) for sequence in sequences]
-            padded_seqs = torch.zeros(len(sequences), max(lengths)).long()
-            for i, seq in enumerate(sequences):
-                end = lengths[i]
-                padded_seqs[i, :end] = seq[:end]
-            return padded_seqs, lengths
-        else:
-            return sequences, torch.zeros(len(sequences), 1).long()
-
-    data.sort(key=lambda x: len(x[0]), reverse=True)
-    src_seqs, ext_src_seqs, trg_seqs, ext_trg_seqs, oov_lst, tag_seqs, trees, sents = zip(*data)
-
-    src_seqs, src_len = merge(src_seqs)
-    ext_src_seqs, _ = merge(ext_src_seqs)
-    trg_seqs, trg_len = merge(trg_seqs)
-    ext_trg_seqs, _ = merge(ext_trg_seqs)
-    tag_seqs, _ = merge(tag_seqs)
-    trees, _ = merge(trees, with_length=False)
-    sents, _ = merge(sents)
-
-    assert src_seqs.size(1) == tag_seqs.size(1), "length of tokens and tags should be equal"
-    assert len(trees) == src_seqs.size(0), "length of src and tree should be equal:{}, {}".format(len(trees), src_seqs.size(0))
-    return src_seqs, ext_src_seqs, src_len, trg_seqs, ext_trg_seqs, trg_len, tag_seqs, oov_lst, trees, sents
-
-
-def get_loader(src_file, tree_file, word2idx, vocab_file,
+def get_loader(src_file, word2idx, 
                batch_size, use_tag=False, debug=False, num=config.debug_num, shuffle=False):
     # if use_tag:
-    dataset = SQuadDatasetWithTag(src_file, tree_file, config.max_seq_len,
-                                  word2idx, vocab_file, debug, num)
+    dataset = SQuadDatasetWithTag(src_file, config.max_seq_len,
+                                  word2idx, debug, num)
     dataloader = data.DataLoader(dataset=dataset,
                                  batch_size=batch_size,
                                  shuffle=shuffle,
-                                 collate_fn=collate_fn_tag)
-    # else:
-    #     dataset = SQuadDataset(src_file, trg_file, config.max_seq_len,
-    #                            word2idx, debug)
-    #     dataloader = data.DataLoader(dataset=dataset,
-    #                                  batch_size=batch_size,
-    #                                  shuffle=shuffle,
-    #                                  collate_fn=collate_fn)
+                                 collate_fn=collate_fn)
 
     return dataloader
 
