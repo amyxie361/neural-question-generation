@@ -31,10 +31,12 @@ class Trainer(object):
 
         print("load train data")
         self.train_loader = get_loader(config.train_src_file,
+                                       config.train_trg_file,
                                        word2idx,
                                        batch_size=config.batch_size,
                                        debug=config.debug)
         self.dev_loader = get_loader(config.dev_src_file,
+                                     config.dev_trg_file,
                                      word2idx,
                                      batch_size=config.batch_size,
                                      debug=True,
@@ -110,12 +112,14 @@ class Trainer(object):
                   .format(epoch, user_friendly_time(time_since(start)), batch_loss, val_loss))
 
     def step(self, train_data):
-        trg_seq, ext_trg_seq, trg_len, oov_list = train_data
+        trg_seq, ext_trg_seq, trg_len, oov_list, src_seq = train_data
 
-        sents = [" ".join([self.idx2tok[i] for i in s]) for s in trg_seq.tolist()]
+        sents = [" ".join([self.idx2tok[i] for i in s[1:-1]]) for s in src_seq.tolist()]
+        print(sents)
     
         use_vec = embed(sents).numpy()
         use_vec = torch.from_numpy(use_vec).float().to(config.device).unsqueeze(0)
+        print(use_vec.size())
 
         if config.use_gpu:
             trg_seq = trg_seq.to(config.device)
@@ -123,6 +127,7 @@ class Trainer(object):
 
         use_doubled = torch.cat([use_vec, use_vec], axis=0)
         encode_states = (use_doubled, use_doubled)
+        print(trg_seq.size())
 
         sos_trg = trg_seq[:, :-1]
         eos_trg = trg_seq[:, 1:]

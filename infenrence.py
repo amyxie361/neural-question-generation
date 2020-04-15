@@ -39,6 +39,7 @@ class BeamSearcher(object):
 
         self.output_dir = output_dir
         self.data_loader = get_loader(config.dev_src_file,
+                                      config.dev_trg_file,
                                       word2idx,
                                       batch_size=1,
                                       shuffle=False,
@@ -61,12 +62,11 @@ class BeamSearcher(object):
         pred_fw = open(self.pred_dir, "w")
         golden_fw = open(self.golden_dir, "w")
         for i, eval_data in enumerate(self.data_loader):
-            trg_seq, ext_trg_seq, trg_len, oov_lst = eval_data
-            trg_seq = trg_seq.tolist()[0]
-            golden_question = " ".join([self.idx2tok[id_] for id_ in trg_seq])
+            trg_seq, ext_trg_seq, trg_len, oov_lst, src_seq = eval_data
+            src_seq = src_seq.tolist()[0]
+            golden_question = " ".join([self.idx2tok[id_] for id_ in src_seq])
             print("==========")
             print(golden_question)
-            print("\n")
             best_question = self.beam_search(trg_seq)
             # discard START  token
             output_indices = [int(idx) for idx in best_question.tokens[1:]]
@@ -86,7 +86,7 @@ class BeamSearcher(object):
 
     def beam_search(self, sent):
         prev_context = torch.zeros(1, 1, 2 * config.hidden_size)
-        sents = [" ".join([self.idx2tok[i] for i in sent])]
+        sents = [" ".join([self.idx2tok[i] for i in sent.tolist()[0][1:-1]])]
         use_vec = embed(sents).numpy()
         
         if config.use_gpu:

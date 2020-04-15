@@ -38,31 +38,46 @@ def collate_fn(data):
         return padded_seqs, lengths
 
     data.sort(key=lambda x: len(x[0]), reverse=True)
-    trg_seqs, ext_trg_seqs, oov_lst = zip(*data)
+    trg_seqs, ext_trg_seqs, oov_lst, src_seqs = zip(*data)
 
     trg_seqs, trg_len = merge(trg_seqs)
+    src_seqs, _ = merge(src_seqs)
+
     ext_trg_seqs, _ = merge(ext_trg_seqs)
 
-    return trg_seqs, ext_trg_seqs, trg_len, oov_lst
+    return trg_seqs, ext_trg_seqs, trg_len, oov_lst, src_seqs
 
 class SQuadDatasetWithTag(data.Dataset):
-    def __init__(self, src_file,  max_length, word2idx, debug=False, num=config.debug_num):
-        data_file = open(src_file, "r")
-        data = []
+    def __init__(self, src_file,  trg_file, max_length, word2idx, debug=False, num=config.debug_num):
+        src_file = open(src_file, "r")
+        trg_file = open(trg_file, "r")
+
+        src_data = []
         count = 0
-        for line in data_file:
+        for line in src_file:
             sent = json.loads(line)
             if len(sent) < 5:
                 continue
-            data.append(sent)
+            src_data.append([s.lower() for s in sent])
+            count += 1
+            if count > config.data_num:
+                break
+        trg_data = []
+        count = 0
+        for line in trg_file:
+            sent = json.loads(line)
+            if len(sent) < 5:
+                continue
+            trg_data.append([s.lower() for s in sent])
             count += 1
             if count > config.data_num:
                 break
 
-        self.trgs = []
-        for example in data:
-            self.trgs.append(example)
+        self.trgs = trg_data
+        # for example in data:
+        #     self.trgs.append(example)
         self.num_seqs = len(self.trgs)
+        self.srcs = src_data
 
         self.max_length = max_length
         self.word2idx = word2idx
@@ -70,13 +85,16 @@ class SQuadDatasetWithTag(data.Dataset):
         if debug:
             num = config.debug_num 
             self.trgs = self.trgs[:num]
+            self.srcs = self.srcs[:num]
             self.num_seqs = num
 
     def __getitem__(self, index):
         trg_seq = self.trgs[index]
+        src_seq = self.srcs[index]
 
         trg_seq, ext_trg_seq, oov_lst = self.context2ids(trg_seq, self.word2idx)
-        return trg_seq, ext_trg_seq, oov_lst
+        src_seq, _, _ = self.context2ids(src_seq, self.word2idx)
+        return trg_seq, ext_trg_seq, oov_lst, src_seq
 
     def __len__(self):
         return self.num_seqs
@@ -85,6 +103,8 @@ class SQuadDatasetWithTag(data.Dataset):
         ids = list()
         extended_ids = list()
         oov_lst = list()
+        ids.append(word2idx[START_TOKEN])
+        extended_ids.append(word2idx[START_TOKEN])
         # START and END token is already in tokens lst
         for token in tokens:
             if token in word2idx:
@@ -98,15 +118,18 @@ class SQuadDatasetWithTag(data.Dataset):
             if len(ids) == self.max_length:
                 break
 
+        ids.append(word2idx[END_TOKEN])
+        extended_ids.append(word2idx[END_TOKEN])
+
         ids = torch.Tensor(ids)
         extended_ids = torch.Tensor(extended_ids)
 
         return ids, extended_ids, oov_lst
 
-def get_loader(src_file, word2idx, 
+def get_loader(src_file, trg_file, word2idx, 
                batch_size, use_tag=False, debug=False, num=config.debug_num, shuffle=False):
     # if use_tag:
-    dataset = SQuadDatasetWithTag(src_file, config.max_seq_len,
+    dataset = SQuadDatasetWithTag(src_file, trg_file, config.max_seq_len,
                                   word2idx, debug, num)
     dataloader = data.DataLoader(dataset=dataset,
                                  batch_size=batch_size,
