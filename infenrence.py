@@ -42,7 +42,6 @@ class BeamSearcher(object):
                                       config.dev_trg_file,
                                       word2idx,
                                       batch_size=1,
-                                      shuffle=False,
                                       debug=config.debug,
                                       num=100)
 
@@ -51,6 +50,7 @@ class BeamSearcher(object):
         self.model = Seq2seq(model_path=model_path)
         self.pred_dir = output_dir + "/generated.txt"
         self.golden_dir = output_dir + "/golden.txt"
+        self.trg_dir = output_dir + "/origin.txt"
         if not os.path.exists(output_dir):
             os.makedirs(output_dir)
 
@@ -61,22 +61,30 @@ class BeamSearcher(object):
     def decode(self):
         pred_fw = open(self.pred_dir, "w")
         golden_fw = open(self.golden_dir, "w")
+        trg_fw = open(self.trg_dir, "w")
         for i, eval_data in enumerate(self.data_loader):
             trg_seq, ext_trg_seq, trg_len, oov_lst, src_seq = eval_data
-            src_seq = src_seq.tolist()[0]
-            golden_question = " ".join([self.idx2tok[id_] for id_ in src_seq])
+            trg_seq = trg_seq.tolist()[0]
+            golden_question = " ".join([self.idx2tok[id_] for id_ in trg_seq[1:-1]])
             print("==========")
-            print(golden_question)
-            best_question = self.beam_search(trg_seq)
+            print("golden: ", golden_question)
+            print("src: ", " ".join([self.idx2tok[id_] for id_ in src_seq.tolist()[0]]))
+            src_sent = [" ".join([self.idx2tok[i] for i in src_seq.tolist()[0][1:-1]])]
+            trg_fw.write(src_sent[0] + "\n")
+            best_questions = self.beam_search(src_sent)
+            best_question = best_questions[0]
             # discard START  token
-            output_indices = [int(idx) for idx in best_question.tokens[1:]]
+            #outs = [[int(idx) for idx in q.tokens[1:-1]] for q in best_questions]
+            #decodes = [outputids2words(out, self.idx2tok, oov_lst[0]) for out in outs]
+            #print(decodes)
+            output_indices = [int(idx) for idx in best_question.tokens[1:-1]]
             decoded_words = outputids2words(output_indices, self.idx2tok, oov_lst[0])
             try:
                 fst_stop_idx = decoded_words.index(END_ID)
                 decoded_words = decoded_words[:fst_stop_idx]
             except ValueError:
                 decoded_words = decoded_words
-            decoded_words = " ".join(decoded_words).split(". ")[0] + "."
+            decoded_words = " ".join(decoded_words)
             print(decoded_words)
             pred_fw.write(decoded_words + "\n")
             golden_fw.write(golden_question + "\n")
@@ -84,10 +92,18 @@ class BeamSearcher(object):
         pred_fw.close()
         golden_fw.close()
 
-    def beam_search(self, sent):
+    def interactive(self, sentence):
+        best_questions = self.beam_search([sentence])
+        outs = [[int(idx) for idx in q.tokens[1:-1]] for q in best_questions]
+        decodes = [outputids2words(out, self.idx2tok, []) for out in outs]
+        return decodes
+
+
+    def beam_search(self, sents):
         prev_context = torch.zeros(1, 1, 2 * config.hidden_size)
-        sents = [" ".join([self.idx2tok[i] for i in sent.tolist()[0][1:-1]])]
+        #sents = [" ".join([self.idx2tok[i] for i in sent.tolist()[0][1:-1]])]
         use_vec = embed(sents).numpy()
+        print(sents)
         
         if config.use_gpu:
             prev_context = prev_context.to(config.device)
@@ -154,4 +170,4 @@ class BeamSearcher(object):
             results = hypotheses
         h_sorted = self.sort_hypotheses(results)
 
-        return h_sorted[0]
+        return h_sorted

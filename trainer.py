@@ -113,13 +113,13 @@ class Trainer(object):
 
     def step(self, train_data):
         trg_seq, ext_trg_seq, trg_len, oov_list, src_seq = train_data
-
+        # print("=================")
         sents = [" ".join([self.idx2tok[i] for i in s[1:-1]]) for s in src_seq.tolist()]
-        # print(sents)
+        # print("sents: ", sents)
+        # print("targets: ", [" ".join([self.idx2tok[i] for i in s[1:-1]]) for s in trg_seq.tolist()])
     
         use_vec = embed(sents).numpy()
         use_vec = torch.from_numpy(use_vec).float().to(config.device).unsqueeze(0)
-        # print(use_vec.size())
 
         if config.use_gpu:
             trg_seq = trg_seq.to(config.device)
@@ -127,7 +127,6 @@ class Trainer(object):
 
         use_doubled = torch.cat([use_vec, use_vec], axis=0)
         encode_states = (use_doubled, use_doubled)
-        # print(trg_seq.size())
 
         sos_trg = trg_seq[:, :-1]
         eos_trg = trg_seq[:, 1:]

@@ -47,19 +47,22 @@ def eval(out_file, src_file, tgt_file, isDIn = False, num_pairs = 500):
 
         isDin: boolean value to check whether input file is DirectIn.txt
     """
-
     pairs = []
     with open(src_file, 'r') as infile:
         for line in infile:
             pair = {}
             pair['tokenized_sentence'] = line[:-1]
             pairs.append(pair)
+            if len(pairs) > 10000:
+                break
 
     with open(tgt_file, "r") as infile:
         cnt = 0
         for line in infile:
             pairs[cnt]['tokenized_question'] = line[:-1]
             cnt += 1
+            if cnt > 10000:
+                break
 
     output = []
     with open(out_file, 'r') as infile:

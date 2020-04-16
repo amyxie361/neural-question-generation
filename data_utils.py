@@ -56,8 +56,6 @@ class SQuadDatasetWithTag(data.Dataset):
         count = 0
         for line in src_file:
             sent = json.loads(line)
-            if len(sent) < 5:
-                continue
             src_data.append([s.lower() for s in sent])
             count += 1
             if count > config.data_num:
@@ -66,8 +64,6 @@ class SQuadDatasetWithTag(data.Dataset):
         count = 0
         for line in trg_file:
             sent = json.loads(line)
-            if len(sent) < 5:
-                continue
             trg_data.append([s.lower() for s in sent])
             count += 1
             if count > config.data_num:
@@ -133,7 +129,7 @@ def get_loader(src_file, trg_file, word2idx,
                                   word2idx, debug, num)
     dataloader = data.DataLoader(dataset=dataset,
                                  batch_size=batch_size,
-                                 shuffle=shuffle,
+                                 shuffle=False,
                                  collate_fn=collate_fn)
 
     return dataloader
