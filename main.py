@@ -1,7 +1,8 @@
 from trainer import Trainer
 from infenrence import BeamSearcher
 import config
-
+import warnings
+warnings.simplefilter('error')  # treat warnings as exceptions
 
 def main():
     if config.train:

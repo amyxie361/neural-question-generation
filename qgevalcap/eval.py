@@ -30,15 +30,19 @@ class QGEvalCap:
         # Compute scores
         # =================================================
         for scorer, method in scorers:
+            print(method, end="\t")
+        print()
+        for scorer, method in scorers:
             # print 'computing %s score...'%(scorer.method())
             score, scores = scorer.compute_score(self.gts, self.res)
             if type(method) == list:
                 for sc, scs, m in zip(score, scores, method):
-                    print("%s: %0.5f"%(m, sc))
+                    print("%0.5f"%(sc), end="\t")
                     output.append(sc)
             else:
-                print("%s: %0.5f"%(method, score))
+                print("%0.5f"%(score), end="\t")
                 output.append(score)
+        print()
         return output
 
 def eval(out_file, src_file, tgt_file, isDIn = False, num_pairs = 500):

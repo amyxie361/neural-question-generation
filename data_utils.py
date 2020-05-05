@@ -11,9 +11,9 @@ import torch.utils.data as data
 from tqdm import tqdm
 import nltk
 
-import stanza
-stanza.download('en')
-nlp = stanza.Pipeline()
+#import stanza
+#stanza.download('en')
+#nlp = stanza.Pipeline()
 
 import config
 
@@ -503,7 +503,7 @@ def collate_fn_tag(data):
             return sequences, torch.zeros(len(sequences), 1).long()
 
     data.sort(key=lambda x: len(x[0]), reverse=True)
-    src_seqs, ext_src_seqs, trg_seqs, ext_trg_seqs, oov_lst, tag_seqs, trees, sents = zip(*data)
+    src_seqs, ext_src_seqs, trg_seqs, ext_trg_seqs, oov_lst, tag_seqs, trees, sents= zip(*data)
 
     src_seqs, src_len = merge(src_seqs)
     ext_src_seqs, _ = merge(ext_src_seqs)

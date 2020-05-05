@@ -60,7 +60,8 @@ class Trainer(object):
         # self.optim = optim.SGD(filter(lambda p: p.requires_grad, params), self.lr, momentum=0.8)
         self.optim = optim.SGD(filter(lambda p: p.requires_grad, params), self.lr)
         # self.optim = optim.Adam(params)
-        self.criterion = nn.CrossEntropyLoss(ignore_index=0)
+        self.criterion_decoder = nn.CrossEntropyLoss(ignore_index=0)
+        self.criterion_encoder = nn.CosineEmbeddingLoss()
 
     def save_model(self, loss, epoch):
         state_dict = {
@@ -131,6 +132,8 @@ class Trainer(object):
         src_len = torch.tensor(src_len, dtype=torch.long)
         trg_seq = sent
         enc_mask = (src_seq == 0).bool()
+        with torch.no_grad():
+            y = torch.Tensor([1] * config.batch_size)
 
         if config.use_gpu:
             src_seq = src_seq.to(config.device)
@@ -140,6 +143,7 @@ class Trainer(object):
             ext_trg_seq = ext_trg_seq.to(config.device)
             enc_mask = enc_mask.to(config.device)
             sent = sent.to(config.device)
+            y = y.to(config.device)
             if config.use_tag:
                 tag_seq = tag_seq.to(config.device)
             else:
@@ -148,20 +152,21 @@ class Trainer(object):
         tree = tree[0] # TODO: tree can't be batched
         enc_outputs, enc_states = self.model.utterance_encoder(src_seq, src_len, tag_seq)
         tree_enc_o, tree_enc_c, tree_enc_h = self.model.tree_encoder(tree, sent) #todo construct tree input
-        tree_enc_c_double = torch.cat((tree_enc_c, tree_enc_c), axis=0).unsqueeze(1)
-        tree_enc_h_double = torch.cat((tree_enc_h, tree_enc_h), axis=0).unsqueeze(1)
-        #tree_enc_o_double = torch.cat((tree_enc_o[0], tree_enc_o[0])).unsqueeze(0)
-        #tree_enc_o_double = tree_enc_o_double.expand(enc_outputs[0].size(0), 2 * config.hidden_size)
-        #tree_output = tree_enc_o_double
+        # tree_enc_c_double = torch.cat((tree_enc_c, tree_enc_c), axis=0).unsqueeze(1)
+        # tree_enc_h_double = torch.cat((tree_enc_h, tree_enc_h), axis=0).unsqueeze(1)
         enc_h, enc_c = enc_states
-        enc_h = torch.cat([tree_enc_h_double, enc_h], axis=-1)
-        enc_c = torch.cat([tree_enc_c_double, enc_c], axis=-1)
-        #tree_enc_states = (tree_enc_h.unsqueeze(0), tree_enc_c.unsqueeze(0))
-        # encode_c: 3x600
-        #enc_h = torch.zeros(enc_h.size()).to(config.device)
-        #enc_c = torch.zeros(enc_c.size()).to(config.device)
-        #enc_outputs = torch.zeros(enc_outputs.size()).to(config.device)
-        encode_states = (enc_h, enc_c) # todo: same as above
+        # enc_h = torch.cat([tree_enc_h_double, enc_h], axis=-1)
+        # enc_c = torch.cat([tree_enc_c_double, enc_c], axis=-1)
+        # encode_states = (enc_h, enc_c)
+        encode_states = enc_states
+
+        # todo
+        cat_enc_c = torch.cat([enc_c[0], enc_c[1]], axis=-1)
+        cat_enc_h = torch.cat([enc_h[0], enc_h[1]], axis=-1)
+        print(tree_enc_c.size(), cat_enc_c.size())
+
+        encoder_loss = self.criterion_encoder(tree_enc_c, cat_enc_c, y) + \
+                       self.criterion_encoder(tree_enc_h, cat_enc_h, y)
 
         sos_trg = trg_seq[:, :-1]
         eos_trg = trg_seq[:, 1:]
@@ -172,8 +177,10 @@ class Trainer(object):
         batch_size, nsteps, _ = logits.size()
         preds = logits.view(batch_size * nsteps, -1)
         targets = eos_trg.contiguous().view(-1)
-        loss = self.criterion(preds, targets)
-        return loss
+
+        decoder_loss = self.criterion_decoder(preds, targets)
+        total_loss = config.tree_loss_alpha * encoder_loss + decoder_loss
+        return total_loss
 
     def evaluate(self, msg):
         self.model.eval_mode()
