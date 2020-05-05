@@ -11,9 +11,9 @@ import torch.utils.data as data
 from tqdm import tqdm
 import nltk
 
-import stanza
-stanza.download('en')
-nlp = stanza.Pipeline()
+# import stanza
+# stanza.download('en')
+# nlp = stanza.Pipeline()
 
 import config
 
