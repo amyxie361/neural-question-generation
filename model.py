@@ -1,3 +1,5 @@
+import warnings
+
 import config
 import torch
 import torch.nn as nn
@@ -191,7 +193,9 @@ class Decoder(nn.Module):
                 zeros = torch.zeros((batch_size, num_oov), device=config.device)
                 extended_logit = torch.cat([logit, zeros], dim=1)
                 out = torch.zeros_like(extended_logit) - INF
-                out, _ = scatter_max(energy, ext_src_seq, out=out)
+                with warnings.catch_warnings():
+                    warnings.simplefilter("ignore")
+                    out, _ = scatter_max(energy, ext_src_seq, out=out)
                 out = out.masked_fill(out == -INF, 0)
                 logit = extended_logit + out
                 logit = logit.masked_fill(logit == 0, -INF)
@@ -224,7 +228,9 @@ class Decoder(nn.Module):
             zeros = torch.zeros((batch_size, num_oov), device=config.device)
             extended_logit = torch.cat([logit, zeros], dim=1)
             out = torch.zeros_like(extended_logit) - INF
-            out, _ = scatter_max(energy, ext_x, out=out)
+            with warnings.catch_warnings():
+                warnings.simplefilter("ignore")
+                out, _ = scatter_max(energy, ext_x, out=out)
             out = out.masked_fill(out == -INF, 0)
             logit = extended_logit + out
             logit = logit.masked_fill(logit == -INF, 0)
