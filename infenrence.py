@@ -117,15 +117,15 @@ class BeamSearcher(object):
         # forward encoder
         tree = tree[0]
         enc_outputs, enc_states = self.model.utterance_encoder(src_seq, src_len, tag_seq)
-        tree_enc_o, tree_enc_c, tree_enc_h = self.model.tree_encoder(tree, sent)
-        tree_enc_c_double = torch.cat([tree_enc_c, tree_enc_c], axis=0).unsqueeze(1)
-        tree_enc_h_double = torch.cat([tree_enc_h, tree_enc_h], axis=0).unsqueeze(1)
+        #tree_enc_o, tree_enc_c, tree_enc_h = self.model.tree_encoder(tree, sent)
+        #tree_enc_c_double = torch.cat([tree_enc_c, tree_enc_c], axis=0).unsqueeze(1)
+        #tree_enc_h_double = torch.cat([tree_enc_h, tree_enc_h], axis=0).unsqueeze(1)
         #tree_enc_o_double = torch.cat((tree_enc_o[0], tree_enc_o[0])).unsqueeze(0)
         #tree_enc_o_double = tree_enc_o_double.expand(enc_outputs[0].size(0), 2 * config.hidden_size)
         #tree_output = tree_enc_o_double
         h, c = enc_states
-        h = self.model.decoder.init_trans_h(torch.cat([tree_enc_h_double, h], axis=-1))
-        c = self.model.decoder.init_trans_c(torch.cat([tree_enc_c_double, c], axis=-1))
+        #h = self.model.decoder.init_trans_h(torch.cat([tree_enc_h_double, h], axis=-1))
+        #c = self.model.decoder.init_trans_c(torch.cat([tree_enc_c_double, c], axis=-1))
         #tree_enc_states = (tree_enc_h.unsqueeze(0), tree_enc_c.unsqueeze(0))
         # encode_states = (enc_h, enc_c)
 
