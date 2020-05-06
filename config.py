@@ -19,8 +19,8 @@ vocab_file = "../data/vocab.txt"
 dev_tree_file = "../data/squad_dev_dependency_parse.txt"
 
 model_path = "./save/"
-exp_name = "master_debug"
-model_path = "./save/" + exp_name + "/train_403160221/1_6.08"
+exp_name = "loss_debug"
+model_path = "./save/" + exp_name + "/train_505140909/5_2.77"
 train = True
 test = False
 device = "cuda:5"
@@ -43,6 +43,8 @@ decay_weight = 0.9
 batch_size = 1
 dropout = 0.3
 max_grad_norm = 20.0
+
+tree_loss_alpha = 0.0
 
 use_tag = True
 use_pointer = True
