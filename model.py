@@ -40,7 +40,7 @@ class Encoder(nn.Module):
         # mask: [b,t]
         energies = torch.matmul(queries, memories.transpose(1, 2))  # [b, t, t]
         energies = energies.masked_fill(mask.unsqueeze(1), value=-1e12)
-        scores = F.softmax(energies, dim=2)
+        scores = torch.softmax(energies, dim=2)
         context = torch.matmul(scores, queries)
         inputs = torch.cat([queries, context], dim=2)
         f_t = torch.tanh(self.update_layer(inputs))
@@ -97,16 +97,16 @@ class TreeEncoder(nn.Module):
         # print(inputs, inputs.size())
         iou = self.ioux(inputs) + self.iouh(child_h_sum)
         i, o, u = torch.split(iou, iou.size(1) // 3, dim=1)
-        i, o, u = F.sigmoid(i), F.sigmoid(o), F.tanh(u)
+        i, o, u = torch.sigmoid(i), torch.sigmoid(o), torch.tanh(u)
 
-        f = F.sigmoid(
+        f = torch.sigmoid(
             self.fh(child_h) +
             self.fx(inputs).repeat(len(child_h), 1)
         )
         fc = torch.mul(f, child_c)
 
         c = torch.mul(i, u) + torch.sum(fc, dim=0, keepdim=True)
-        h = torch.mul(o, F.tanh(c))
+        h = torch.mul(o, torch.tanh(c))
         return o, c, h
 
     def forward(self, tree, inputs):
@@ -151,7 +151,7 @@ class Decoder(nn.Module):
         # query : [b, 1, d]
         energy = torch.matmul(query, memories.transpose(1, 2))  # [b, 1, t]
         energy = energy.squeeze(1).masked_fill(mask, value=-1e12)
-        attn_dist = F.softmax(energy, dim=1).unsqueeze(dim=1)  # [b, 1, t]
+        attn_dist = torch.softmax(energy, dim=1).unsqueeze(dim=1)  # [b, 1, t]
         context_vector = torch.matmul(attn_dist, memories)  # [b, 1, d]
 
         return context_vector, energy
