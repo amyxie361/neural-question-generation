@@ -163,7 +163,7 @@ class Trainer(object):
         # todo
         cat_enc_c = torch.cat([enc_c[0], enc_c[1]], axis=-1)
         cat_enc_h = torch.cat([enc_h[0], enc_h[1]], axis=-1)
-        print(tree_enc_c.size(), cat_enc_c.size())
+        # print(tree_enc_c.size(), cat_enc_c.size())
 
         encoder_loss = self.criterion_encoder(tree_enc_c, cat_enc_c, y) + \
                        self.criterion_encoder(tree_enc_h, cat_enc_h, y)
