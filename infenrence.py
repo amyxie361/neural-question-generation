@@ -169,7 +169,7 @@ class BeamSearcher(object):
                                                                        prev_states, prev_context,
                                                                        enc_features, enc_mask)
             h_state, c_state = states
-            log_probs = F.log_softmax(logits, dim=1)
+            log_probs = torch.log_softmax(logits, dim=1)
             top_k_log_probs, top_k_ids \
                 = torch.topk(log_probs, config.beam_size * 2, dim=-1)
 
