@@ -20,19 +20,19 @@ vocab_file = "../data/vocab.txt"
 dev_tree_file = "../data/squad_dev_dependency_parse.txt"
 
 model_path = "./save/"
-exp_name = "loss_ver1_alpha0"
+exp_name = "loss_alpha0.3_true(last0.3means3)"
 model_path = "./save/" + exp_name + "/train_509110126/354_15.01"
-train = False
-test = True
-device = "cuda:7"
+train = True
+test = False
+device = "cuda:4"
 use_gpu = True
-debug = True
+debug = False
 debug_num = 100
 vocab_size = 45000
 freeze_embedding = False
 sparsity = False
 
-num_epochs = 1000
+num_epochs = 5
 max_seq_len = 400
 num_layers = 2
 hidden_size = 300
@@ -45,7 +45,7 @@ batch_size = 1
 dropout = 0.3
 max_grad_norm = 20.0
 
-tree_loss_alpha = 0.0
+tree_loss_alpha = 0.3
 
 use_tag = True
 use_pointer = True

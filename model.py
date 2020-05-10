@@ -137,8 +137,8 @@ class Decoder(nn.Module):
         if num_layers == 1:
             dropout = 0.0
         self.encoder_trans = nn.Linear(hidden_size, hidden_size)
-        self.init_trans_h = nn.Linear(int(1 * hidden_size), hidden_size)
-        self.init_trans_c = nn.Linear(int(1 * hidden_size), hidden_size)
+        #self.init_trans_h = nn.Linear(int(1 * hidden_size), hidden_size)
+        #self.init_trans_c = nn.Linear(int(1 * hidden_size), hidden_size)
         self.reduce_layer = nn.Linear(embedding_size + hidden_size, embedding_size)
         self.lstm = nn.LSTM(embedding_size, hidden_size, batch_first=True,
                             num_layers=num_layers, bidirectional=False, dropout=dropout)
@@ -158,9 +158,9 @@ class Decoder(nn.Module):
     def get_encoder_features(self, encoder_outputs):
         return self.encoder_trans(encoder_outputs)
 
-    def form_init(self, init_state):
-        init_h, init_c = init_state
-        return self.init_trans_h(init_h), self.init_trans_c(init_c)
+    # def form_init(self, init_state):
+    #    init_h, init_c = init_state
+    #    return self.init_trans_h(init_h), self.init_trans_c(init_c)
 
     def forward(self, trg_seq, ext_src_seq, init_states, encoder_outputs, encoder_mask):
         # trg_seq : [b,t]
@@ -173,7 +173,8 @@ class Decoder(nn.Module):
         memories = self.get_encoder_features(encoder_outputs)
         # print(tree_output.size(), encoder_outputs[0].size(), memories.size())
         logits = []
-        prev_states = self.form_init(init_states)
+        #prev_states = self.form_init(init_states)
+        prev_states = init_states
         prev_context = torch.zeros((batch_size, 1, hidden_size), device=config.device)
         for i in range(max_len):
             y_i = trg_seq[:, i].unsqueeze(1)  # [b, 1]
